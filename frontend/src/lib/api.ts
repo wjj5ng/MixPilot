@@ -12,6 +12,9 @@ import type { components } from "./api-types";
 
 export type HealthResponse = components["schemas"]["HealthResponse"];
 export type RecommendationPayload = components["schemas"]["RecommendationEvent"];
+export type ControlResponse = components["schemas"]["ControlResponse"];
+export type ActionEntry = components["schemas"]["ActionEntry"];
+export type RecentActionsResponse = components["schemas"]["RecentActionsResponse"];
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -21,6 +24,26 @@ export async function fetchHealth(): Promise<HealthResponse> {
     throw new Error(`/health failed: ${response.status}`);
   }
   return (await response.json()) as HealthResponse;
+}
+
+/** ADR-0008 §3 킬 스위치 — controller를 즉시 dry-run으로 다운그레이드. */
+export async function forceDryRun(): Promise<ControlResponse> {
+  const response = await fetch(`${API_BASE_URL}/control/dry-run`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error(`/control/dry-run failed: ${response.status}`);
+  }
+  return (await response.json()) as ControlResponse;
+}
+
+/** 최근 적용된 자동 액션 이력 — ADR-0008 §3.6. */
+export async function fetchRecentActions(): Promise<RecentActionsResponse> {
+  const response = await fetch(`${API_BASE_URL}/control/recent-actions`);
+  if (!response.ok) {
+    throw new Error(`/control/recent-actions failed: ${response.status}`);
+  }
+  return (await response.json()) as RecentActionsResponse;
 }
 
 /**

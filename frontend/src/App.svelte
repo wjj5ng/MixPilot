@@ -2,7 +2,10 @@
   import { onMount, onDestroy } from "svelte";
   import {
     fetchHealth,
+    fetchRecentActions,
+    forceDryRun,
     subscribeRecommendations,
+    type ActionEntry,
     type HealthResponse,
     type RecommendationPayload,
   } from "./lib/api";
@@ -11,10 +14,39 @@
   let healthError = $state<string | null>(null);
   let recommendations = $state<RecommendationPayload[]>([]);
   let streamConnected = $state(false);
+  let recentActions = $state<ActionEntry[]>([]);
+  let killSwitchStatus = $state<string | null>(null);
+  let killSwitchBusy = $state(false);
 
   const MAX_VISIBLE_RECS = 50;
+  const RECENT_ACTIONS_POLL_MS = 5_000;
 
   let unsubscribe: (() => void) | null = null;
+  let recentActionsTimer: ReturnType<typeof setInterval> | null = null;
+
+  async function refreshRecentActions(): Promise<void> {
+    try {
+      const data = await fetchRecentActions();
+      recentActions = data.entries;
+    } catch (e) {
+      console.warn("recent-actions fetch failed", e);
+    }
+  }
+
+  async function handleKillSwitch(): Promise<void> {
+    if (killSwitchBusy) return;
+    killSwitchBusy = true;
+    try {
+      const data = await forceDryRun();
+      killSwitchStatus = `${data.status}${data.effective_mode ? ` (mode=${data.effective_mode})` : ""}`;
+      // health도 새로고침 — operating_mode 표시 갱신.
+      health = await fetchHealth();
+    } catch (e) {
+      killSwitchStatus = `오류: ${String(e)}`;
+    } finally {
+      killSwitchBusy = false;
+    }
+  }
 
   onMount(async () => {
     try {
@@ -22,6 +54,8 @@
     } catch (e) {
       healthError = String(e);
     }
+    await refreshRecentActions();
+    recentActionsTimer = setInterval(refreshRecentActions, RECENT_ACTIONS_POLL_MS);
 
     unsubscribe = subscribeRecommendations(
       (rec) => {
@@ -37,6 +71,7 @@
 
   onDestroy(() => {
     if (unsubscribe) unsubscribe();
+    if (recentActionsTimer !== null) clearInterval(recentActionsTimer);
   });
 
   function kindLabel(kind: string): string {
@@ -75,6 +110,51 @@
       </dl>
     {:else}
       <p>로딩 중…</p>
+    {/if}
+  </section>
+
+  <section class="card kill-switch">
+    <h2>킬 스위치</h2>
+    <p class="hint">
+      자동 액션을 즉시 정지하고 운영자가 직접 콘솔을 제어하도록
+      <code>dry-run</code> 모드로 강제 다운그레이드합니다. 한 번 누르면 프로세스
+      재시작 전까지 모든 자동 송신이 차단됩니다 (ADR-0008 §3).
+    </p>
+    <button class="danger" disabled={killSwitchBusy} onclick={handleKillSwitch}>
+      {killSwitchBusy ? "처리 중…" : "🛑 자동 응답 정지 (dry-run 강제)"}
+    </button>
+    {#if killSwitchStatus}
+      <p class="status">→ {killSwitchStatus}</p>
+    {/if}
+  </section>
+
+  <section class="card">
+    <h2>
+      최근 자동 액션 ({recentActions.length})
+      <span class="hint-inline">— 60초 윈도우, 5초마다 새로고침</span>
+    </h2>
+    {#if recentActions.length === 0}
+      <p class="hint">자동 적용된 액션 없음.</p>
+    {:else}
+      <ul class="action-list">
+        {#each recentActions as action, i (i)}
+          <li class="action">
+            <div class="action-head">
+              <span class="action-channel">ch{String(action.channel).padStart(2, "0")}</span>
+              <span class="action-kind">{action.kind}</span>
+              <span class="action-time">{action.timestamp.toFixed(1)}</span>
+            </div>
+            <div class="action-osc">
+              {#each action.osc_messages as msg}
+                <code>{msg.address} = {msg.value}</code>
+              {/each}
+            </div>
+            {#if action.reason}
+              <div class="action-reason">{action.reason}</div>
+            {/if}
+          </li>
+        {/each}
+      </ul>
     {/if}
   </section>
 
@@ -221,5 +301,88 @@
   .rec-reason {
     color: #e6e8eb;
     font-size: 0.95rem;
+  }
+
+  /* 킬 스위치 */
+  .kill-switch .danger {
+    background: #4a1f1f;
+    color: #ff9a9a;
+    border: 1px solid #6a2a2a;
+    padding: 0.6rem 1rem;
+    border-radius: 0.35rem;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .kill-switch .danger:hover:not(:disabled) {
+    background: #6a2a2a;
+    color: #ffcaca;
+  }
+  .kill-switch .danger:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .kill-switch .status {
+    margin: 0.75rem 0 0;
+    color: #ff7676;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.85rem;
+  }
+  .hint-inline {
+    font-size: 0.75rem;
+    color: #8b95a3;
+    font-weight: 400;
+    margin-left: 0.5rem;
+  }
+
+  /* 최근 액션 */
+  .action-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .action {
+    background: #232730;
+    border-left: 3px solid #6fcf97;
+    padding: 0.6rem 0.85rem;
+    border-radius: 0 0.25rem 0.25rem 0;
+  }
+  .action-head {
+    display: flex;
+    gap: 0.75rem;
+    align-items: baseline;
+    font-size: 0.85rem;
+    margin-bottom: 0.25rem;
+  }
+  .action-channel {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #8b95a3;
+  }
+  .action-kind {
+    color: #c8cdd6;
+    font-weight: 600;
+  }
+  .action-time {
+    color: #8b95a3;
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .action-osc {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.5rem;
+    margin-bottom: 0.25rem;
+  }
+  .action-osc code {
+    font-size: 0.8rem;
+  }
+  .action-reason {
+    color: #b6bdc7;
+    font-size: 0.85rem;
   }
 </style>
