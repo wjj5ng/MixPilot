@@ -20,8 +20,12 @@ FFT, LUFS, Peak, RMS, Dynamic Range, Feedback Detection 등의 DSP 분석을 기
 - **Framework**: FastAPI
 - **Tests**: pytest
 - **CI**: GitHub Actions
-- **DSP 라이브러리**: <!-- TODO: numpy/scipy 기본 + librosa(분석) / pyloudnorm(LUFS) / sounddevice·pyaudio(I/O) 중 확정 -->
-- **실시간 전송**: <!-- TODO: WebSocket / SSE / gRPC streaming 중 결정 -->
+- **DSP**: `numpy` + `scipy` 기본, `pyloudnorm`(LUFS). 추가 분석 라이브러리(`librosa` 등) 도입은 필요 시 ADR로 결정 (ADR-0001 미결).
+- **오디오 I/O**: `sounddevice` — M32 USB 32ch 직접 캡처 ([ADR-0004](docs/adr/0004-audio-input-m32-usb.md)).
+- **콘솔 제어**: `python-osc` — X32 OSC over UDP로 M32 직결 ([ADR-0005](docs/adr/0005-control-output-x32-osc.md)).
+- **대시보드 push**: WebSocket / SSE 미결 (ADR-0002).
+- **운영 콘솔**: Behringer/Midas **M32** (32 input / USB 32-in·32-out 내장).
+- **DAW (보조)**: **Reaper** — 녹음·Virtual Soundcheck·`evals/fixtures/` 생성 한정. 운영 경로 제외 ([ADR-0006](docs/adr/0006-reaper-scope.md)).
 
 ## Commands
 
