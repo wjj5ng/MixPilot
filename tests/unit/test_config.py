@@ -73,6 +73,9 @@ class TestSettingsDefaults:
         assert s.feedback_analysis.min_frequency_hz == 100.0
         assert s.feedback_analysis.max_frequency_hz == 8000.0
 
+    def test_dev_cors_default_disabled(self) -> None:
+        assert Settings().dev_cors_enabled is False
+
     def test_channel_map_path_default(self) -> None:
         s = Settings()
         assert s.channel_map_path == Path("config/channels.yaml")
@@ -130,6 +133,10 @@ class TestEnvOverride:
         assert s.feedback_analysis.pnr_threshold_db == 18.0
         assert s.feedback_analysis.persistence_frames == 5
         assert s.feedback_analysis.max_frequency_hz == 10000.0
+
+    def test_dev_cors_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MIXPILOT_DEV_CORS_ENABLED", "true")
+        assert Settings().dev_cors_enabled is True
 
     def test_channel_map_path_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MIXPILOT_CHANNEL_MAP_PATH", "/etc/mixpilot/channels.yaml")

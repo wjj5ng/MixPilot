@@ -38,6 +38,7 @@ MixPilot의 모듈 경계·의존성 방향·외부 시스템 어댑터 규칙. 
 | `api/` | FastAPI 라우터, 요청·응답 스키마, WebSocket 핸들러. | `fastapi`, `pydantic`, `domain/`, `rules/`, `infra/`(추상 포트 통해) | `dsp/` 직접 호출 (→ `rules/` 통해서), 도메인 로직 직접 구현 |
 | `infra/` | 외부 I/O 어댑터 — 오디오 캡처·결과 저장·메트릭·외부 알림. `domain/`의 포트를 *구현*. | `domain/`(포트), 외부 라이브러리(`sounddevice`, `pyaudio`, HTTP 클라이언트 등) | `api/`, `rules/`, `dsp/`, 도메인 로직 |
 | `runtime/` | 라이브 처리에 필요한 *상태가 있는* 지원 컴포넌트 — 링 버퍼, 스로틀러, 지속성 검출기 등. 외부 I/O는 없지만 메모리 상태 보유. `dsp/`의 순수 함수를 *상태와 함께 래핑*하는 자리. | `numpy`, 표준 라이브러리, `domain/`(타입), `dsp/`(순수 분석 함수) | `api/`, `infra/`, `rules/`, 외부 I/O |
+| `frontend/` (별도 트리) | Svelte + Vite SPA. 백엔드의 HTTP/SSE API만 소비 (ADR-0007). | 백엔드 `/health`·`/recommendations` HTTP. | `src/mixpilot/*` 직접 import 불가능(다른 언어), 백엔드 내부 상태 직접 접근 금지 |
 | `main.py` | FastAPI 인스턴스, 의존성 주입 와이어링, 라이프스팬(startup/shutdown) 이벤트. | 모든 모듈(조립자 권한) | 도메인 로직·DSP 로직 직접 작성 |
 | `config.py` | 환경 변수, 카테고리별 임계값, 튜닝 파라미터. | `pydantic-settings`, 표준 라이브러리 | 다른 `src/mixpilot/*` 모듈 import 금지 (역의존만 허용) |
 
@@ -125,5 +126,6 @@ M32 32채널을 입력 소스 카테고리(보컬·설교자·성가대·악기)
 | [ADR-0004](docs/adr/0004-audio-input-m32-usb.md) | 오디오 입력 — M32 USB 직접 캡처 (sounddevice) | Accepted |
 | [ADR-0005](docs/adr/0005-control-output-x32-osc.md) | 제어 출력 — X32 OSC over UDP로 M32 직결 | Accepted |
 | [ADR-0006](docs/adr/0006-reaper-scope.md) | Reaper의 역할 범위 — 운영 경로 제외 | Accepted |
+| [ADR-0007](docs/adr/0007-frontend-stack.md) | 프론트엔드 — Svelte + Vite (vanilla SPA), monorepo | Accepted |
 
 <!-- 새 결정 추가 시 행 추가 + `docs/adr/NNNN-<title>.md`에 본문 -->

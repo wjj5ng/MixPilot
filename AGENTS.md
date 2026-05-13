@@ -31,39 +31,52 @@ FFT, LUFS, Peak, RMS, Dynamic Range, Feedback Detection 등의 DSP 분석을 기
 
 | 목적 | 명령 |
 |---|---|
-| 의존성 설치 | `uv sync` |
-| 의존성 추가 | `uv add <package>` |
-| 개발용 의존성 추가 | `uv add --dev <package>` |
-| 테스트 | `uv run pytest` |
-| 테스트 + 커버리지 | `uv run pytest --cov=src/mixpilot --cov-report=term-missing` |
-| 포맷 | `uv run ruff format .` |
-| 린트 | `uv run ruff check --fix .` |
-| 개발 서버 | `uv run fastapi dev src/mixpilot/main.py` |
-| 프로덕션 실행 | `uv run uvicorn mixpilot.main:app --host 0.0.0.0 --port 8000` |
+| 백엔드 의존성 설치 | `uv sync` |
+| 백엔드 의존성 추가 | `uv add <package>` |
+| 백엔드 개발 의존성 | `uv add --dev <package>` |
+| 백엔드 테스트 | `uv run pytest` |
+| 백엔드 테스트+커버리지 | `uv run pytest --cov=src/mixpilot --cov-report=term-missing` |
+| 백엔드 포맷 | `uv run ruff format .` |
+| 백엔드 린트 | `uv run ruff check --fix .` |
+| 백엔드 개발 서버 | `uv run fastapi dev src/mixpilot/main.py` |
+| 백엔드 프로덕션 | `uv run uvicorn mixpilot.main:app --host 0.0.0.0 --port 8000` |
+| 프론트 의존성 설치 | `npm --prefix frontend install` |
+| 프론트 dev 서버 | `npm --prefix frontend run dev` (http://localhost:5173) |
+| 프론트 빌드 | `npm --prefix frontend run build` |
+| 프론트 타입 체크 | `npm --prefix frontend run check` |
 
-## Project structure (src 레이아웃)
+## Project structure (src 레이아웃 + monorepo)
 
 ```
-src/mixpilot/
+src/mixpilot/                  # Python 백엔드 (FastAPI)
   __init__.py
-  main.py              # FastAPI 진입점 (app = FastAPI())
-  api/                 # HTTP/WS 라우터, 요청·응답 스키마
-  dsp/                 # DSP 분석 모듈 (FFT, LUFS, Peak, RMS, DR, Feedback)
-  rules/               # 규칙 기반 추천 엔진 (분석 결과 → 추천 액션)
-  domain/              # 도메인 모델 (Signal, Channel, Source, Recommendation)
-  infra/               # 외부 I/O (오디오 캡처, 결과 저장, 메트릭)
-  config.py            # 환경 설정 (pydantic-settings 권장)
-tests/                 # pytest. src/mixpilot/<x> ↔ tests/<x>로 미러
-  unit/                # 순수 함수·DSP 단위 테스트
-  integration/         # 라우터·외부 I/O 통합 테스트
-evals/                 # 평가 셋 (DSP 정확도, 추천 품질 회귀)
+  main.py                      # 진입점 (app = FastAPI())
+  api/                         # HTTP/WS 라우터, 요청·응답 스키마
+  dsp/                         # DSP 분석 모듈 (RMS, LUFS, Feedback 등)
+  rules/                       # 규칙 기반 추천 엔진
+  domain/                      # 도메인 모델·포트
+  infra/                       # 외부 I/O 어댑터
+  runtime/                     # 상태 보유 런타임 컴포넌트 (RollingBuffer 등)
+  config.py                    # pydantic-settings 기반 설정
+frontend/                      # Svelte + Vite 운영 대시보드 (ADR-0007)
+  src/
+    App.svelte
+    lib/api.ts                 # 백엔드 API 클라이언트
+  package.json
+  vite.config.ts
+tests/                         # pytest. src/mixpilot/<x> ↔ tests/<x>로 미러
+  unit/
+  integration/
+evals/                         # 평가 셋
   cases/
-  fixtures/            # 오디오 샘플 (긴 파일은 git-lfs 또는 외부 저장 고려)
-  results/             # 실행 결과 (gitignore)
-ARCHITECTURE.md        # 모듈 경계·의존성 방향
+  fixtures/
+  results/                     # gitignore
+docs/adr/                      # 아키텍처 결정 기록
+ARCHITECTURE.md                # 모듈 경계·의존성 방향
 ```
 
-> `tests/` 디렉토리는 첫 모듈을 만들 때 동시에 생성. `evals/fixtures/`의 오디오 샘플은 용량에 따라 git-lfs 또는 외부 스토리지 분리.
+> `tests/`는 첫 모듈 만들 때 동시에. `evals/fixtures/`의 오디오 샘플은 용량에
+> 따라 git-lfs 또는 외부 스토리지 분리.
 
 ## Conventions
 

@@ -24,6 +24,7 @@ from typing import Any
 
 import numpy as np
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from mixpilot.config import Settings, get_settings
@@ -342,6 +343,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = cfg
     app.state.broker = broker
+
+    if cfg.dev_cors_enabled:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["http://localhost:5173"],
+            allow_credentials=False,
+            allow_methods=["GET"],
+            allow_headers=["*"],
+        )
 
     @app.get("/health")
     async def health() -> dict[str, Any]:

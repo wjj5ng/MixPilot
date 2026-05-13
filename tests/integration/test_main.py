@@ -98,6 +98,24 @@ class TestOpenAPI:
         assert "/recommendations" in paths
         assert "get" in paths["/recommendations"]
 
+
+class TestCors:
+    def test_default_no_cors_header(self, client: TestClient) -> None:
+        # 디폴트 (dev_cors_enabled=False)에서는 CORS 미들웨어 미장착 — 헤더 없음.
+        response = client.get("/health", headers={"Origin": "http://localhost:5173"})
+        assert "access-control-allow-origin" not in response.headers
+
+    def test_dev_cors_enabled_allows_vite_origin(self) -> None:
+        settings = Settings()
+        settings.dev_cors_enabled = True  # type: ignore[misc]
+        client = TestClient(create_app(settings=settings))
+        response = client.get("/health", headers={"Origin": "http://localhost:5173"})
+        assert response.status_code == 200
+        assert (
+            response.headers.get("access-control-allow-origin")
+            == "http://localhost:5173"
+        )
+
     # NOTE: SSE 본문 라운드트립(open → publish → stream → assert)은 sync
     # TestClient + asyncio.Queue 조합이 안정적이지 않다(thread-safe 아님,
     # iter_lines 블로킹). 발행/구독/직렬화 흐름은 단위 테스트로 커버:
