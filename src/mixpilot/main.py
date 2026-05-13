@@ -27,6 +27,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
+from mixpilot.api.schemas import HealthResponse, RecommendationEvent
 from mixpilot.config import Settings, get_settings
 from mixpilot.domain import (
     Channel,
@@ -353,20 +354,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_headers=["*"],
         )
 
-    @app.get("/health")
-    async def health() -> dict[str, Any]:
+    @app.get("/health", response_model=HealthResponse)
+    async def health() -> HealthResponse:
         """헬스 체크 — 운영 모드·오디오 설정·캡처/분석 활성 여부 반환."""
-        return {
-            "status": "ok",
-            "operating_mode": cfg.m32.operating_mode.value,
-            "sample_rate": cfg.audio.sample_rate,
-            "num_channels": cfg.audio.num_channels,
-            "audio_enabled": cfg.audio.enabled,
-            "lufs_analysis_enabled": cfg.lufs_analysis.enabled,
-            "feedback_analysis_enabled": cfg.feedback_analysis.enabled,
-        }
+        return HealthResponse(
+            status="ok",
+            operating_mode=cfg.m32.operating_mode.value,
+            sample_rate=cfg.audio.sample_rate,
+            num_channels=cfg.audio.num_channels,
+            audio_enabled=cfg.audio.enabled,
+            lufs_analysis_enabled=cfg.lufs_analysis.enabled,
+            feedback_analysis_enabled=cfg.feedback_analysis.enabled,
+        )
 
-    @app.get("/recommendations")
+    @app.get(
+        "/recommendations",
+        responses={
+            200: {
+                "model": RecommendationEvent,
+                "description": (
+                    "Server-Sent Events 스트림. 각 'data:' 라인 본문이 "
+                    "RecommendationEvent JSON."
+                ),
+                "content": {"text/event-stream": {}},
+            }
+        },
+    )
     async def stream_recommendations(request: Request) -> StreamingResponse:
         """Recommendation의 Server-Sent Events 스트림.
 

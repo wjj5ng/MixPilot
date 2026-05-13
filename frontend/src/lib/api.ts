@@ -1,31 +1,19 @@
 /**
  * MixPilot 백엔드 API 클라이언트 (얇은 fetch / EventSource 래퍼).
  *
+ * 응답 타입은 백엔드 OpenAPI에서 자동 생성 — `api-types.ts`. 수정 금지.
+ * 갱신: 백엔드 띄운 상태에서 `npm run gen:api`.
+ *
  * 백엔드는 dev 시 별도 포트(http://localhost:8000), 빌드 후에는 같은 origin.
  * VITE_API_BASE_URL을 .env에 설정해 override 가능.
  */
 
+import type { components } from "./api-types";
+
+export type HealthResponse = components["schemas"]["HealthResponse"];
+export type RecommendationPayload = components["schemas"]["RecommendationEvent"];
+
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
-
-export interface HealthResponse {
-  status: string;
-  operating_mode: string;
-  sample_rate: number;
-  num_channels: number;
-  audio_enabled: boolean;
-  lufs_analysis_enabled: boolean;
-  feedback_analysis_enabled: boolean;
-}
-
-export interface RecommendationPayload {
-  channel: number;
-  category: string;
-  label: string;
-  kind: string;
-  params: Record<string, number>;
-  confidence: number;
-  reason: string;
-}
 
 export async function fetchHealth(): Promise<HealthResponse> {
   const response = await fetch(`${API_BASE_URL}/health`);
