@@ -1,0 +1,113 @@
+# M32 채널 → MixPilot source 카테고리 매핑.
+# 운영자가 service 단위로 갱신. 코드 수정·재배포 불필요.
+#
+# 카테고리: vocal | preacher | choir | instrument | unknown
+# 자동 추천: M32 OSC `/ch/XX/config/name`으로 스크리블 스트립 라벨을 읽어
+#           매핑 후보 생성 가능 (infra/m32_meta.py — 향후).
+
+channels:
+  # 1-2: 설교자
+  - id: 1
+    category: preacher
+    label: "설교자 메인"
+  - id: 2
+    category: preacher
+    label: "설교자 라브"
+
+  # 3-4: 찬양 보컬
+  - id: 3
+    category: vocal
+    label: "찬양 보컬 1"
+  - id: 4
+    category: vocal
+    label: "찬양 보컬 2"
+
+  # 5-8: 성가대 (SATB)
+  - id: 5
+    category: choir
+    label: "성가대 SOP"
+  - id: 6
+    category: choir
+    label: "성가대 ALT"
+  - id: 7
+    category: choir
+    label: "성가대 TEN"
+  - id: 8
+    category: choir
+    label: "성가대 BAS"
+
+  # 9-16: 라이브 악기
+  - id: 9
+    category: instrument
+    label: "건반"
+  - id: 10
+    category: instrument
+    label: "어쿠스틱 기타"
+  - id: 11
+    category: instrument
+    label: "일렉 기타"
+  - id: 12
+    category: instrument
+    label: "베이스"
+  - id: 13
+    category: instrument
+    label: "드럼 킥"
+  - id: 14
+    category: instrument
+    label: "드럼 스네어"
+  - id: 15
+    category: instrument
+    label: "드럼 오버헤드 L"
+  - id: 16
+    category: instrument
+    label: "드럼 오버헤드 R"
+
+  # 17-32: 예비/외부 입력. 사용 시작하면 카테고리 갱신.
+  - id: 17
+    category: unknown
+    label: ""
+  - id: 18
+    category: unknown
+    label: ""
+  - id: 19
+    category: unknown
+    label: ""
+  - id: 20
+    category: unknown
+    label: ""
+  - id: 21
+    category: unknown
+    label: ""
+  - id: 22
+    category: unknown
+    label: ""
+  - id: 23
+    category: unknown
+    label: ""
+  - id: 24
+    category: unknown
+    label: ""
+  - id: 25
+    category: unknown
+    label: ""
+  - id: 26
+    category: unknown
+    label: ""
+  - id: 27
+    category: unknown
+    label: ""
+  - id: 28
+    category: unknown
+    label: ""
+  - id: 29
+    category: unknown
+    label: ""
+  - id: 30
+    category: unknown
+    label: ""
+  - id: 31
+    category: unknown
+    label: ""
+  - id: 32
+    category: unknown
+    label: ""
