@@ -7,13 +7,16 @@ ARCHITECTURE 규약: `runtime`은 `domain`(타입)과 표준 라이브러리만 
 외부 I/O 없음. 단, 메모리 상태는 보유한다.
 """
 
+from .action_history import ActionHistory, HistoryEntry
 from .auto_guard import AutoGuard, GuardDecision
 from .buffer import RollingBuffer
 from .feedback_detector import FeedbackDetector
 
 __all__ = [
+    "ActionHistory",
     "AutoGuard",
     "FeedbackDetector",
     "GuardDecision",
+    "HistoryEntry",
     "RollingBuffer",
 ]

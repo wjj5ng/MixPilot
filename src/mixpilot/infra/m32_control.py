@@ -15,7 +15,7 @@ from typing import Any
 from mixpilot.config import M32Config, OperatingMode
 from mixpilot.domain import Recommendation, RecommendationKind
 from mixpilot.infra.audit import AuditLogger, AuditOutcome
-from mixpilot.runtime import AutoGuard
+from mixpilot.runtime import ActionHistory, AutoGuard
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +69,7 @@ class M32OscController:
         *,
         auto_guard: AutoGuard | None = None,
         audit_logger: AuditLogger | None = None,
+        action_history: ActionHistory | None = None,
     ) -> None:
         """
         Args:
@@ -91,6 +92,7 @@ class M32OscController:
         self._config = config
         self._auto_guard = auto_guard
         self._audit_logger = audit_logger
+        self._action_history = action_history
         # 킬 스위치 — config 변경 없이 운영 모드를 런타임에 강제 다운그레이드.
         self._mode_override: OperatingMode | None = None
 
@@ -157,6 +159,13 @@ class M32OscController:
             self._client.send_message(address, value)
             sent.append((address, value))
             logger.info("osc send: %s %r", address, value)
+        if sent and self._action_history is not None:
+            self._action_history.add(
+                channel_id=int(recommendation.target.channel),
+                kind=recommendation.kind.value,
+                osc_messages=[(a, float(v)) for a, v in sent],
+                reason=recommendation.reason,
+            )
         self._audit(
             recommendation,
             AuditOutcome.APPLIED,

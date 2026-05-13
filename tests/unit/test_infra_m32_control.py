@@ -23,7 +23,7 @@ from mixpilot.infra.m32_control import (
     M32OscController,
     _clamp_delta_db,
 )
-from mixpilot.runtime import AutoGuard
+from mixpilot.runtime import ActionHistory, AutoGuard
 
 
 class FakeOscClient:
@@ -479,6 +479,71 @@ class TestAutoGuardIntegration:
         ctl, _ = self._ctl(auto_guard=guard)
         asyncio.run(ctl.apply(_rec(RecommendationKind.INFO, confidence=1.0)))
         assert guard.session_action_count == 0
+
+
+class TestActionHistoryIntegration:
+    """ADR-0008 §3.6 — 적용된 액션이 ActionHistory에 기록되는지."""
+
+    def test_applied_action_recorded_in_history(self) -> None:
+        history = ActionHistory(window_seconds=60.0, clock=lambda: 1000.0)
+        client = FakeOscClient()
+        ctl = M32OscController(
+            M32Config(
+                operating_mode=OperatingMode.AUTO,
+                auto_apply_confidence_threshold=0.0,
+            ),
+            osc_client=client,
+            action_history=history,
+        )
+        asyncio.run(
+            ctl.apply(
+                _rec(
+                    RecommendationKind.GAIN_ADJUST,
+                    confidence=0.99,
+                    channel=3,
+                    params={"fader": 0.5},
+                )
+            )
+        )
+        recent = history.recent()
+        assert len(recent) == 1
+        assert recent[0].channel_id == 3
+        assert recent[0].kind == "gain_adjust"
+        assert recent[0].osc_messages == (("/ch/03/mix/fader", 0.5),)
+
+    def test_blocked_actions_not_recorded(self) -> None:
+        history = ActionHistory(window_seconds=60.0, clock=lambda: 1000.0)
+        client = FakeOscClient()
+        ctl = M32OscController(
+            M32Config(operating_mode=OperatingMode.DRY_RUN),
+            osc_client=client,
+            action_history=history,
+        )
+        asyncio.run(ctl.apply(_rec(RecommendationKind.MUTE, confidence=1.0)))
+        # dry-run에서 차단 → 이력 기록 없음.
+        assert history.recent() == []
+
+    def test_no_history_means_no_record(self) -> None:
+        # history 미주입 시 정상 동작.
+        client = FakeOscClient()
+        ctl = M32OscController(
+            M32Config(
+                operating_mode=OperatingMode.AUTO,
+                auto_apply_confidence_threshold=0.0,
+            ),
+            osc_client=client,
+        )
+        # 예외 없이 통과.
+        asyncio.run(
+            ctl.apply(
+                _rec(
+                    RecommendationKind.GAIN_ADJUST,
+                    confidence=0.99,
+                    params={"fader": 0.5},
+                )
+            )
+        )
+        assert client.sent == [("/ch/01/mix/fader", 0.5)]
 
 
 class TestAuditIntegration:

@@ -24,6 +24,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/control/recent-actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Recent Actions
+         * @description 최근 자동 적용된 액션 이력 — ADR-0008 §3.6 윈도우 기반 조회.
+         *
+         *     실 *역 OSC* 송신(롤백)은 콘솔 상태 reader가 들어와야 가능
+         *     (docs/hardware-dependent.md #4). 지금은 운영자 가시성·디버깅용 조회만.
+         */
+        get: operations["recent_actions_control_recent_actions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/control/dry-run": {
         parameters: {
             query?: never;
@@ -78,6 +101,22 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * ActionEntry
+         * @description `ActionHistory.HistoryEntry`의 API 표면 형태.
+         */
+        ActionEntry: {
+            /** Timestamp */
+            timestamp: number;
+            /** Channel */
+            channel: number;
+            /** Kind */
+            kind: string;
+            /** Osc Messages */
+            osc_messages: components["schemas"]["OscMessage"][];
+            /** Reason */
+            reason: string;
+        };
+        /**
          * ControlResponse
          * @description 제어 엔드포인트(`/control/*`) 공통 응답.
          */
@@ -108,6 +147,26 @@ export interface components {
             feedback_analysis_enabled: boolean;
             /** Peak Analysis Enabled */
             peak_analysis_enabled: boolean;
+        };
+        /**
+         * OscMessage
+         * @description 단일 OSC 메시지 — `(address, value)` 한 쌍.
+         */
+        OscMessage: {
+            /** Address */
+            address: string;
+            /** Value */
+            value: number;
+        };
+        /**
+         * RecentActionsResponse
+         * @description `GET /control/recent-actions` 응답.
+         */
+        RecentActionsResponse: {
+            /** Entries */
+            entries: components["schemas"]["ActionEntry"][];
+            /** Window Seconds */
+            window_seconds: number;
         };
         /**
          * RecommendationEvent
@@ -159,6 +218,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    recent_actions_control_recent_actions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecentActionsResponse"];
                 };
             };
         };

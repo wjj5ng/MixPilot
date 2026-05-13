@@ -35,6 +35,30 @@ class ControlResponse(BaseModel):
     """오버라이드 후의 effective_mode. controller가 없을 땐 None."""
 
 
+class OscMessage(BaseModel):
+    """단일 OSC 메시지 — `(address, value)` 한 쌍."""
+
+    address: str
+    value: float
+
+
+class ActionEntry(BaseModel):
+    """`ActionHistory.HistoryEntry`의 API 표면 형태."""
+
+    timestamp: float
+    channel: int
+    kind: str
+    osc_messages: list[OscMessage]
+    reason: str
+
+
+class RecentActionsResponse(BaseModel):
+    """`GET /control/recent-actions` 응답."""
+
+    entries: list[ActionEntry]
+    window_seconds: float
+
+
 class RecommendationEvent(BaseModel):
     """`/recommendations` SSE 스트림의 단일 이벤트 페이로드.
 

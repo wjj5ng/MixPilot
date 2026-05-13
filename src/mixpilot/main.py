@@ -27,7 +27,14 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-from mixpilot.api.schemas import ControlResponse, HealthResponse, RecommendationEvent
+from mixpilot.api.schemas import (
+    ActionEntry,
+    ControlResponse,
+    HealthResponse,
+    OscMessage,
+    RecentActionsResponse,
+    RecommendationEvent,
+)
 from mixpilot.config import Settings, get_settings
 from mixpilot.domain import (
     Channel,
@@ -48,7 +55,7 @@ from mixpilot.rules import (
     evaluate_all_channels_peak,
     evaluate_all_feedback,
 )
-from mixpilot.runtime import FeedbackDetector, RollingBuffer
+from mixpilot.runtime import ActionHistory, FeedbackDetector, RollingBuffer
 
 logger = logging.getLogger(__name__)
 
@@ -282,7 +289,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     if cfg.audit_log_path is not None
                     else None
                 )
-                controller = M32OscController(cfg.m32, audit_logger=audit_logger)
+                controller = M32OscController(
+                    cfg.m32,
+                    audit_logger=audit_logger,
+                    action_history=action_history,
+                )
                 app.state.controller = controller
                 channel_map = YamlChannelMetadata(cfg.channel_map_path)
                 sources = list(await channel_map.get_all_channels())
@@ -371,9 +382,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+    action_history = ActionHistory()
     app.state.settings = cfg
     app.state.broker = broker
     app.state.controller = None  # lifespan에서 audio.enabled=True면 채워진다.
+    app.state.action_history = action_history
 
     if cfg.dev_cors_enabled:
         app.add_middleware(
@@ -396,6 +409,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             lufs_analysis_enabled=cfg.lufs_analysis.enabled,
             feedback_analysis_enabled=cfg.feedback_analysis.enabled,
             peak_analysis_enabled=cfg.peak_analysis.enabled,
+        )
+
+    @app.get("/control/recent-actions", response_model=RecentActionsResponse)
+    async def recent_actions(request: Request) -> RecentActionsResponse:
+        """최근 자동 적용된 액션 이력 — ADR-0008 §3.6 윈도우 기반 조회.
+
+        실 *역 OSC* 송신(롤백)은 콘솔 상태 reader가 들어와야 가능
+        (docs/hardware-dependent.md #4). 지금은 운영자 가시성·디버깅용 조회만.
+        """
+        history: ActionHistory = request.app.state.action_history
+        entries = [
+            ActionEntry(
+                timestamp=e.timestamp,
+                channel=e.channel_id,
+                kind=e.kind,
+                osc_messages=[
+                    OscMessage(address=addr, value=value)
+                    for addr, value in e.osc_messages
+                ],
+                reason=e.reason,
+            )
+            for e in history.recent()
+        ]
+        return RecentActionsResponse(
+            entries=entries, window_seconds=history.window_seconds
         )
 
     @app.post("/control/dry-run", response_model=ControlResponse)

@@ -109,6 +109,43 @@ class TestOpenAPI:
         assert "/control/dry-run" in paths
         assert "post" in paths["/control/dry-run"]
 
+    def test_recent_actions_route_is_documented(self, client: TestClient) -> None:
+        response = client.get("/openapi.json")
+        paths = response.json()["paths"]
+        assert "/control/recent-actions" in paths
+        assert "get" in paths["/control/recent-actions"]
+
+
+class TestRecentActionsEndpoint:
+    """ADR-0008 §3.6 — GET /control/recent-actions."""
+
+    def test_empty_when_no_actions(self, client: TestClient) -> None:
+        response = client.get("/control/recent-actions")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["entries"] == []
+        assert body["window_seconds"] == 60.0
+
+    def test_lists_recorded_actions(self) -> None:
+        from mixpilot.runtime import ActionHistory
+
+        app = create_app(settings=Settings())
+        history: ActionHistory = app.state.action_history
+        history.add(
+            channel_id=5,
+            kind="mute",
+            osc_messages=[("/ch/05/mix/on", 0)],
+            reason="테스트",
+        )
+        client = TestClient(app)
+        body = client.get("/control/recent-actions").json()
+        assert len(body["entries"]) == 1
+        entry = body["entries"][0]
+        assert entry["channel"] == 5
+        assert entry["kind"] == "mute"
+        assert entry["osc_messages"] == [{"address": "/ch/05/mix/on", "value": 0.0}]
+        assert entry["reason"] == "테스트"
+
 
 class TestKillSwitchEndpoint:
     """ADR-0008 §3 — POST /control/dry-run."""
