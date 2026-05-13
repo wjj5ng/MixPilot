@@ -13,12 +13,24 @@ ARCHITECTURE.md 규약: 다른 `src/mixpilot/*` 모듈을 import하지 않는다
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
 
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class AudioSource(StrEnum):
+    """`AudioConfig.source` 선택지.
+
+    - `sounddevice`: 실 M32 USB 캡처 (ADR-0004 기본 경로).
+    - `synthetic`: 합성 사인파 — 하드웨어 없이 처리 루프를 가동·데모할 때.
+    """
+
+    SOUNDDEVICE = "sounddevice"
+    SYNTHETIC = "synthetic"
 
 
 class OperatingMode(StrEnum):
@@ -35,16 +47,23 @@ class OperatingMode(StrEnum):
 
 
 class AudioConfig(BaseModel):
-    """오디오 입력 설정 (ADR-0004 — M32 USB 직접 캡처)."""
+    """오디오 입력 설정 (ADR-0004 — M32 USB 직접 캡처 + 합성 옵션)."""
 
     enabled: bool = False
     """오디오 캡처 활성화 여부. False면 main.py 라이프스팬이 인프라를
     초기화하지 않아 M32 미연결 환경에서도 서버가 뜬다. 라이브 운영 시 True."""
 
+    source: AudioSource = AudioSource.SOUNDDEVICE
+    """입력 소스 선택. 디폴트 sounddevice(실 M32). 데모·테스트는 synthetic."""
+
     device_substring: str = "M32"  # sounddevice 디바이스명 substring 매칭
     sample_rate: int = Field(default=48000, gt=0)
     block_size: int = Field(default=512, gt=0)  # 256-1024 권장 (ADR-0004)
     num_channels: int = Field(default=32, gt=0)
+
+    synthetic_amplitudes_dbfs: Sequence[float] | None = None
+    """`source=synthetic` 일 때 채널별 사인파 amplitude (dBFS).
+    None이면 채널 1=-30 dBFS, 채널 N=-3 dBFS의 선형 step. 길이는 `num_channels`."""
 
 
 class M32Config(BaseModel):

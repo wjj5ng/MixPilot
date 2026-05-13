@@ -35,7 +35,7 @@ from mixpilot.api.schemas import (
     RecentActionsResponse,
     RecommendationEvent,
 )
-from mixpilot.config import Settings, get_settings
+from mixpilot.config import AudioSource, Settings, get_settings
 from mixpilot.domain import (
     Channel,
     ChannelId,
@@ -49,6 +49,7 @@ from mixpilot.infra.audio_capture import SoundDeviceAudioSource
 from mixpilot.infra.audit import AuditLogger
 from mixpilot.infra.channel_map import YamlChannelMetadata
 from mixpilot.infra.m32_control import M32OscController
+from mixpilot.infra.synthetic_audio import SyntheticAudioSource
 from mixpilot.rules import (
     evaluate_all_channels,
     evaluate_all_channels_lufs,
@@ -173,7 +174,7 @@ def _build_lufs_targets(settings: Settings) -> dict[str, float]:
 
 
 async def _processing_loop(
-    audio: SoundDeviceAudioSource,
+    audio: SoundDeviceAudioSource | SyntheticAudioSource,
     controller: M32OscController,
     broker: RecommendationBroker,
     sources_by_id: dict[int, Source],
@@ -279,11 +280,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         task: asyncio.Task[None] | None = None
-        audio: SoundDeviceAudioSource | None = None
+        audio: SoundDeviceAudioSource | SyntheticAudioSource | None = None
 
         if cfg.audio.enabled:
             try:
-                audio = SoundDeviceAudioSource(cfg.audio)
+                if cfg.audio.source is AudioSource.SYNTHETIC:
+                    audio = SyntheticAudioSource(
+                        cfg.audio,
+                        amplitudes_dbfs=cfg.audio.synthetic_amplitudes_dbfs,
+                    )
+                else:
+                    audio = SoundDeviceAudioSource(cfg.audio)
                 audit_logger = (
                     AuditLogger(path=cfg.audit_log_path)
                     if cfg.audit_log_path is not None

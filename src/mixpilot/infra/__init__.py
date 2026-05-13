@@ -8,11 +8,13 @@ from .audio_capture import SoundDeviceAudioSource
 from .audit import AuditLogger, AuditOutcome
 from .channel_map import YamlChannelMetadata
 from .m32_control import M32OscController
+from .synthetic_audio import SyntheticAudioSource
 
 __all__ = [
     "AuditLogger",
     "AuditOutcome",
     "M32OscController",
     "SoundDeviceAudioSource",
+    "SyntheticAudioSource",
     "YamlChannelMetadata",
 ]
