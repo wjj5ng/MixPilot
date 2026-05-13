@@ -16,11 +16,19 @@ from .lufs import (
     lufs_channels,
     lufs_integrated,
 )
+from .peak import (
+    DEFAULT_TRUE_PEAK_OVERSAMPLE,
+    peak,
+    peak_channels,
+    true_peak,
+    true_peak_channels,
+)
 from .rms import SILENCE_FLOOR_DBFS, rms, rms_channels, to_dbfs
 
 __all__ = [
     "DEFAULT_NEIGHBOR_BAND_HZ",
     "DEFAULT_PNR_THRESHOLD_DB",
+    "DEFAULT_TRUE_PEAK_OVERSAMPLE",
     "MIN_DURATION_SECONDS",
     "SILENCE_FLOOR_DBFS",
     "SILENCE_FLOOR_LUFS",
@@ -28,7 +36,11 @@ __all__ = [
     "detect_peak_bins",
     "lufs_channels",
     "lufs_integrated",
+    "peak",
+    "peak_channels",
     "rms",
     "rms_channels",
     "to_dbfs",
+    "true_peak",
+    "true_peak_channels",
 ]

@@ -1,0 +1,60 @@
+# Peak / True Peak 기준 회귀 케이스 — 표준 신호 기대값.
+#
+# 알고리즘: sample peak = max|samples|, true peak = ITU-R BS.1770-4 식
+# 4x oversampling 후 sample peak.
+
+id: peak-baseline
+description: Peak·True Peak 분석의 결정적 회귀 — 사인파·DC·무음·임펄스.
+functions_under_test:
+  - mixpilot.dsp.peak.peak
+  - mixpilot.dsp.peak.true_peak
+
+cases:
+  - id: peak-silence
+    input:
+      kind: silence
+      sample_rate: 48000
+      num_samples: 1024
+    expected:
+      peak: 0.0
+      true_peak: 0.0
+      tolerance_abs: 1.0e-9
+
+  - id: peak-dc-0.3
+    input:
+      kind: dc
+      sample_rate: 48000
+      value: 0.3
+      duration_seconds: 0.1
+    expected:
+      peak: 0.3
+      # true peak는 resample_poly 양 끝 transient로 약간 달라질 수 있음.
+      true_peak: 0.3
+      tolerance_abs: 0.05
+
+  - id: peak-sine-1khz-amp0.5
+    input:
+      kind: sine
+      sample_rate: 48000
+      frequency_hz: 1000
+      amplitude: 0.5
+      duration_seconds: 0.1
+    expected:
+      peak: 0.5
+      tolerance_rel: 1.0e-3
+      # true peak는 항상 sample peak 이상, 보통 100~110% 사이.
+      true_peak_at_least: 0.5
+      true_peak_at_most: 0.55
+
+  - id: peak-impulse
+    input:
+      kind: impulse
+      length: 1024
+      position: 0
+      amplitude: 1.0
+    expected:
+      peak: 1.0
+      # 임펄스의 true peak는 sample peak와 거의 같음 (DAC 재구성 후에도
+      # 최댓값은 임펄스 위치).
+      true_peak_at_least: 1.0
+      true_peak_at_most: 1.05
