@@ -1,0 +1,49 @@
+# RMS 기준 회귀 케이스 — 표준 신호에 대한 기대값.
+# 변경이 일어나도 이 값들이 깨지면 안 됨. 깨지면 의도적이라면 ADR + 이 파일 갱신.
+#
+# 실행: `/run-eval --case='rms-*'` (러너는 evals/runner — TODO)
+
+id: rms-baseline
+description: RMS 분석의 결정적 회귀 — 사인파·DC·무음·임펄스 표준 신호.
+function_under_test: mixpilot.dsp.rms.rms
+
+cases:
+  - id: rms-sine-440hz-amp0.5
+    input:
+      kind: sine
+      sample_rate: 48000
+      frequency_hz: 440
+      amplitude: 0.5
+      duration_seconds: 1.0
+    expected:
+      value: 0.3535533905932738  # amplitude / sqrt(2)
+      tolerance_rel: 1.0e-4
+
+  - id: rms-dc-0.3
+    input:
+      kind: dc
+      sample_rate: 48000
+      value: 0.3
+      duration_seconds: 0.1
+    expected:
+      value: 0.3
+      tolerance_abs: 1.0e-12
+
+  - id: rms-silence
+    input:
+      kind: silence
+      sample_rate: 48000
+      duration_seconds: 0.5
+    expected:
+      value: 0.0
+      tolerance_abs: 1.0e-12
+
+  - id: rms-impulse-len100
+    input:
+      kind: impulse
+      length: 100
+      position: 0
+      amplitude: 1.0
+    expected:
+      value: 0.1  # 1 / sqrt(100)
+      tolerance_rel: 1.0e-10
