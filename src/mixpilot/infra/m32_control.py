@@ -22,6 +22,22 @@ logger = logging.getLogger(__name__)
 
 # ADR-0008 §1 Kind x Mode 자동 적용 매트릭스.
 # INFO는 어떤 모드에서도 자동 적용 안 됨 — 정보 채널 전용.
+MAX_DELTA_DB: float = 3.0
+"""ADR-0008 §3.2 — GAIN_ADJUST / EQ_ADJUST 한 액션당 최대 변화량(dB)."""
+
+MAX_FEEDBACK_CUT_DB: float = 2.0
+"""ADR-0008 §3.2 — FEEDBACK_ALERT 응답 시 최대 cut(dB). 노치도 같은 한도."""
+
+
+def _clamp_delta_db(delta_db: float, cap: float = MAX_DELTA_DB) -> float:
+    """변화량을 ±cap 범위로 제한.
+
+    ADR-0008 §3.2 안전장치 — 룰이 큰 delta를 요청해도 한 액션은 cap 이내로
+    수렴한다. 호출자는 결과 delta를 *그대로 적용*해야 함 (재조정은 다음 액션에).
+    """
+    return max(-cap, min(cap, delta_db))
+
+
 _AUTO_KINDS_BY_MODE: dict[OperatingMode, frozenset[RecommendationKind]] = {
     OperatingMode.DRY_RUN: frozenset(),
     OperatingMode.ASSIST: frozenset(
@@ -197,13 +213,24 @@ class M32OscController:
         elif rec.kind is RecommendationKind.UNMUTE:
             yield (f"{ch_path}/mix/on", 1)
         elif rec.kind is RecommendationKind.GAIN_ADJUST:
-            # 절대 fader(0.0-1.0) 적용. delta_db 기반은 현재 fader 읽기 필요 → 추후.
+            # 절대 fader(0.0-1.0) 적용. delta_db는 현재 페이더 읽기가 선행돼야
+            # 진짜 적용 가능 — docs/hardware-dependent.md #2 참조.
             if "fader" in rec.params:
                 fader = max(0.0, min(1.0, float(rec.params["fader"])))
                 yield (f"{ch_path}/mix/fader", fader)
-            else:
+            elif "delta_db" in rec.params:
+                raw = float(rec.params["delta_db"])
+                clamped = _clamp_delta_db(raw)
+                if raw != clamped:
+                    logger.warning(
+                        "GAIN_ADJUST delta_db %.2f clamped to %.2f (ADR-0008 cap %.1f)",
+                        raw,
+                        clamped,
+                        MAX_DELTA_DB,
+                    )
                 logger.warning(
-                    "GAIN_ADJUST without 'fader' param — delta_db not yet supported"
+                    "GAIN_ADJUST delta_db not yet sent — current fader read required "
+                    "(docs/hardware-dependent.md #2)"
                 )
         elif rec.kind is RecommendationKind.INFO:
             return  # 정보 알림은 OSC 송신 없음

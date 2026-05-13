@@ -17,7 +17,12 @@ from mixpilot.domain import (
     SourceCategory,
 )
 from mixpilot.infra import AuditLogger, AuditOutcome
-from mixpilot.infra.m32_control import M32OscController
+from mixpilot.infra.m32_control import (
+    MAX_DELTA_DB,
+    MAX_FEEDBACK_CUT_DB,
+    M32OscController,
+    _clamp_delta_db,
+)
 from mixpilot.runtime import AutoGuard
 
 
@@ -295,6 +300,65 @@ class TestApply:
             )
         )
         assert client.sent == [("/ch/12/mix/fader", 0.7)]
+
+
+class TestMagnitudeCaps:
+    """ADR-0008 §3.2 변화량 캡 — 클램프 헬퍼·delta_db 경로 클램핑.
+
+    실 OSC 송신은 delta_db 적용에 현재 페이더 읽기가 필요해 미구현
+    (docs/hardware-dependent.md #2). 여기서는 *클램프 정책*만 검증한다.
+    """
+
+    def test_constants_match_adr(self) -> None:
+        assert MAX_DELTA_DB == 3.0
+        assert MAX_FEEDBACK_CUT_DB == 2.0
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            (0.0, 0.0),
+            (1.5, 1.5),
+            (-1.5, -1.5),
+            (3.0, 3.0),
+            (-3.0, -3.0),
+            (5.0, 3.0),
+            (-5.0, -3.0),
+            (10.0, 3.0),
+            (-10.0, -3.0),
+        ],
+    )
+    def test_clamp_delta_db(self, raw: float, expected: float) -> None:
+        assert _clamp_delta_db(raw) == expected
+
+    def test_clamp_custom_cap(self) -> None:
+        assert _clamp_delta_db(5.0, cap=MAX_FEEDBACK_CUT_DB) == 2.0
+        assert _clamp_delta_db(-5.0, cap=MAX_FEEDBACK_CUT_DB) == -2.0
+
+    def test_gain_adjust_with_delta_emits_nothing_yet(self) -> None:
+        # delta_db 경로는 현재 페이더 읽기 미구현 → 송신 없음 (캡만 로그).
+        ctl = M32OscController(
+            M32Config(operating_mode=OperatingMode.AUTO),
+            osc_client=FakeOscClient(),
+        )
+        msgs = list(
+            ctl._translate(
+                _rec(RecommendationKind.GAIN_ADJUST, params={"delta_db": 10.0})
+            )
+        )
+        assert msgs == []
+
+    def test_gain_adjust_with_absolute_fader_still_works(self) -> None:
+        # 절대 fader 경로는 여전히 정상 — 캡과 무관.
+        ctl = M32OscController(
+            M32Config(operating_mode=OperatingMode.AUTO),
+            osc_client=FakeOscClient(),
+        )
+        msgs = list(
+            ctl._translate(
+                _rec(RecommendationKind.GAIN_ADJUST, channel=3, params={"fader": 0.5})
+            )
+        )
+        assert msgs == [("/ch/03/mix/fader", 0.5)]
 
 
 class TestKillSwitch:
