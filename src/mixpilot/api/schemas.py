@@ -22,6 +22,7 @@ class HealthResponse(BaseModel):
     audio_enabled: bool
     lufs_analysis_enabled: bool
     feedback_analysis_enabled: bool
+    peak_analysis_enabled: bool
 
 
 class RecommendationEvent(BaseModel):

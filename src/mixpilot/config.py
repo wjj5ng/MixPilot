@@ -79,6 +79,23 @@ class LufsTargets(BaseModel):
         return getattr(self, category, self.unknown)
 
 
+class PeakAnalysisConfig(BaseModel):
+    """라이브 true peak 클리핑·헤드룸 감시 설정.
+
+    매 프레임 채널별 true peak를 계산해 임계 이상이면 INFO Recommendation을
+    발화. RMS처럼 짧은 프레임에서도 측정 가능해 라이브 루프에 직접 통합.
+    """
+
+    enabled: bool = False
+    """라이브 peak 감시 활성화 여부. 디폴트 off."""
+
+    headroom_threshold_dbfs: float = Field(default=-1.0, le=0.0)
+    """이 이상의 true peak는 알림. 0보다 클 수 없음 (디지털 풀-스케일이 한계)."""
+
+    oversample: int = Field(default=4, gt=0)
+    """True peak 오버샘플링 배수. ITU-R BS.1770-4 권고는 4."""
+
+
 class FeedbackAnalysisConfig(BaseModel):
     """라이브 feedback (하울링) 감지 설정.
 
@@ -162,6 +179,7 @@ class Settings(BaseSettings):
     feedback_analysis: FeedbackAnalysisConfig = Field(
         default_factory=FeedbackAnalysisConfig
     )
+    peak_analysis: PeakAnalysisConfig = Field(default_factory=PeakAnalysisConfig)
 
     dev_cors_enabled: bool = False
     """프론트엔드 dev 서버(http://localhost:5173)에서의 CORS 요청을 허용한다.

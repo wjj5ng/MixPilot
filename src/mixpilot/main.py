@@ -44,6 +44,7 @@ from mixpilot.infra.m32_control import M32OscController
 from mixpilot.rules import (
     evaluate_all_channels,
     evaluate_all_channels_lufs,
+    evaluate_all_channels_peak,
     evaluate_all_feedback,
 )
 from mixpilot.runtime import FeedbackDetector, RollingBuffer
@@ -175,6 +176,9 @@ async def _processing_loop(
     lufs_eval_interval_frames: int = 50,
     feedback_detectors: dict[int, FeedbackDetector] | None = None,
     feedback_pnr_threshold_db: float = 15.0,
+    peak_enabled: bool = False,
+    peak_headroom_threshold_dbfs: float = -1.0,
+    peak_oversample: int = 4,
 ) -> None:
     """오디오 프레임 → 룰 평가 → 제어 송신 + 브로커 푸시.
 
@@ -183,6 +187,8 @@ async def _processing_loop(
       `lufs_eval_interval_frames` 마다 평가.
     - Feedback 룰: `feedback_detectors`가 주입되었으면 매 프레임 채널별로
       detector 업데이트. 지속 검증된 peaks만 Recommendation 발화.
+    - Peak 룰: `peak_enabled=True`면 매 프레임 채널별 true peak 평가, 헤드룸
+      임계 이상이면 INFO 발화.
     """
     lufs_enabled = lufs_buffer is not None and lufs_targets is not None
     feedback_enabled = feedback_detectors is not None
@@ -232,6 +238,15 @@ async def _processing_loop(
                             pnr_threshold_db=feedback_pnr_threshold_db,
                         )
                     )
+
+            if peak_enabled:
+                recommendations.extend(
+                    evaluate_all_channels_peak(
+                        channels,
+                        headroom_threshold_dbfs=peak_headroom_threshold_dbfs,
+                        oversample=peak_oversample,
+                    )
+                )
 
             for rec in recommendations:
                 await controller.apply(rec)
@@ -305,14 +320,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         lufs_eval_interval_frames=cfg.lufs_analysis.eval_interval_frames,
                         feedback_detectors=feedback_detectors,
                         feedback_pnr_threshold_db=cfg.feedback_analysis.pnr_threshold_db,
+                        peak_enabled=cfg.peak_analysis.enabled,
+                        peak_headroom_threshold_dbfs=(
+                            cfg.peak_analysis.headroom_threshold_dbfs
+                        ),
+                        peak_oversample=cfg.peak_analysis.oversample,
                     )
                 )
                 logger.info(
-                    "audio started (mode=%s device=%s lufs=%s feedback=%s)",
+                    "audio started (mode=%s device=%s lufs=%s feedback=%s peak=%s)",
                     cfg.m32.operating_mode.value,
                     cfg.audio.device_substring,
                     "on" if cfg.lufs_analysis.enabled else "off",
                     "on" if cfg.feedback_analysis.enabled else "off",
+                    "on" if cfg.peak_analysis.enabled else "off",
                 )
             except Exception:
                 logger.exception(
@@ -365,6 +386,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             audio_enabled=cfg.audio.enabled,
             lufs_analysis_enabled=cfg.lufs_analysis.enabled,
             feedback_analysis_enabled=cfg.feedback_analysis.enabled,
+            peak_analysis_enabled=cfg.peak_analysis.enabled,
         )
 
     @app.get(

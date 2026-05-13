@@ -70,6 +70,8 @@ export interface components {
             lufs_analysis_enabled: boolean;
             /** Feedback Analysis Enabled */
             feedback_analysis_enabled: boolean;
+            /** Peak Analysis Enabled */
+            peak_analysis_enabled: boolean;
         };
         /**
          * RecommendationEvent

@@ -15,6 +15,7 @@ from mixpilot.config import (
     LufsTargets,
     M32Config,
     OperatingMode,
+    PeakAnalysisConfig,
     RmsDbfsTargets,
     Settings,
 )
@@ -72,6 +73,12 @@ class TestSettingsDefaults:
         assert s.feedback_analysis.persistence_frames == 3
         assert s.feedback_analysis.min_frequency_hz == 100.0
         assert s.feedback_analysis.max_frequency_hz == 8000.0
+
+    def test_peak_analysis_defaults(self) -> None:
+        s = Settings()
+        assert s.peak_analysis.enabled is False
+        assert s.peak_analysis.headroom_threshold_dbfs == -1.0
+        assert s.peak_analysis.oversample == 4
 
     def test_dev_cors_default_disabled(self) -> None:
         assert Settings().dev_cors_enabled is False
@@ -133,6 +140,15 @@ class TestEnvOverride:
         assert s.feedback_analysis.pnr_threshold_db == 18.0
         assert s.feedback_analysis.persistence_frames == 5
         assert s.feedback_analysis.max_frequency_hz == 10000.0
+
+    def test_peak_analysis_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MIXPILOT_PEAK_ANALYSIS__ENABLED", "true")
+        monkeypatch.setenv("MIXPILOT_PEAK_ANALYSIS__HEADROOM_THRESHOLD_DBFS", "-3.0")
+        monkeypatch.setenv("MIXPILOT_PEAK_ANALYSIS__OVERSAMPLE", "8")
+        s = Settings()
+        assert s.peak_analysis.enabled is True
+        assert s.peak_analysis.headroom_threshold_dbfs == -3.0
+        assert s.peak_analysis.oversample == 8
 
     def test_dev_cors_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MIXPILOT_DEV_CORS_ENABLED", "true")
@@ -243,6 +259,17 @@ class TestValidation:
             FeedbackAnalysisConfig(min_frequency_hz=0)
         with pytest.raises(ValidationError):
             FeedbackAnalysisConfig(max_frequency_hz=0)
+
+    def test_rejects_positive_headroom_threshold(self) -> None:
+        # 0 dBFS는 풀 스케일 — 그 위로 임계 설정은 무의미.
+        with pytest.raises(ValidationError):
+            PeakAnalysisConfig(headroom_threshold_dbfs=0.5)
+
+    def test_rejects_non_positive_peak_oversample(self) -> None:
+        with pytest.raises(ValidationError):
+            PeakAnalysisConfig(oversample=0)
+        with pytest.raises(ValidationError):
+            PeakAnalysisConfig(oversample=-1)
 
 
 class TestOperatingMode:
