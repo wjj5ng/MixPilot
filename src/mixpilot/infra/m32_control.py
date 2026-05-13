@@ -14,6 +14,7 @@ from typing import Any
 
 from mixpilot.config import M32Config, OperatingMode
 from mixpilot.domain import Recommendation, RecommendationKind
+from mixpilot.infra.audit import AuditLogger, AuditOutcome
 from mixpilot.runtime import AutoGuard
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,7 @@ class M32OscController:
         osc_client: Any = None,
         *,
         auto_guard: AutoGuard | None = None,
+        audit_logger: AuditLogger | None = None,
     ) -> None:
         """
         Args:
@@ -60,6 +62,8 @@ class M32OscController:
             auto_guard: ADR-0008 §3 보편 안전장치(레이트·세션 한도) — 선택적.
                 None이면 가드 검사를 건너뛴다(테스트·하위호환). 프로덕션은 항상
                 전달해야 한다.
+            audit_logger: ADR-0008 §3 감사 로그 — 선택적. 모든 자동 액션
+                시도(적용·차단)를 JSONL에 기록.
         """
         if osc_client is None:
             from pythonosc.udp_client import (
@@ -70,6 +74,7 @@ class M32OscController:
         self._client = osc_client
         self._config = config
         self._auto_guard = auto_guard
+        self._audit_logger = audit_logger
         # 킬 스위치 — config 변경 없이 운영 모드를 런타임에 강제 다운그레이드.
         self._mode_override: OperatingMode | None = None
 
@@ -96,14 +101,24 @@ class M32OscController:
         """추천을 콘솔에 적용.
 
         운영 모드·Kind·confidence·AutoGuard 검사를 모두 통과해야 OSC가 송신된다.
+        모든 시도(적용·정책 차단·가드 차단)는 `audit_logger`가 있으면 기록된다.
         """
-        if not self._should_apply(recommendation):
+        effective = self.effective_mode.value
+        policy_reason = self._check_policy(recommendation)
+        if policy_reason is not None:
             logger.info(
-                "skipped policy (mode=%s, kind=%s, confidence=%.2f): %s",
-                self.effective_mode.value,
+                "skipped policy (mode=%s, kind=%s, confidence=%.2f): %s — %s",
+                effective,
                 recommendation.kind.value,
                 recommendation.confidence,
                 recommendation.reason,
+                policy_reason,
+            )
+            self._audit(
+                recommendation,
+                AuditOutcome.BLOCKED_POLICY,
+                effective,
+                policy_reason,
             )
             return
         if self._auto_guard is not None:
@@ -114,23 +129,59 @@ class M32OscController:
                     decision.reason,
                     recommendation.reason,
                 )
+                self._audit(
+                    recommendation,
+                    AuditOutcome.BLOCKED_GUARD,
+                    effective,
+                    decision.reason,
+                )
                 return
+        sent: list[tuple[str, float | int]] = []
         for address, value in self._translate(recommendation):
             self._client.send_message(address, value)
+            sent.append((address, value))
             logger.info("osc send: %s %r", address, value)
+        self._audit(
+            recommendation,
+            AuditOutcome.APPLIED,
+            effective,
+            "",
+            osc_messages=sent,
+        )
 
-    def _should_apply(self, rec: Recommendation) -> bool:
-        """ADR-0008 §1 Kind dispatch + §3 confidence 임계.
+    def _audit(
+        self,
+        rec: Recommendation,
+        outcome: AuditOutcome,
+        effective_mode: str,
+        reason: str,
+        osc_messages: list[tuple[str, float | int]] | None = None,
+    ) -> None:
+        if self._audit_logger is None:
+            return
+        self._audit_logger.record(
+            rec,
+            outcome=outcome,
+            effective_mode=effective_mode,
+            reason=reason,
+            osc_messages=osc_messages or (),
+        )
 
-        INFO는 어떤 모드에서도 자동 적용 안 됨. confidence 임계는 모든 모드에 적용.
-        킬 스위치(override)가 활성이면 effective_mode가 DRY_RUN이 되어 자동 차단.
-        """
+    def _check_policy(self, rec: Recommendation) -> str | None:
+        """ADR-0008 §1+§3 검사. 통과면 None, 차단되면 사유 문자열."""
         mode = self.effective_mode
         if rec.kind not in _AUTO_KINDS_BY_MODE[mode]:
-            return False
+            return f"kind {rec.kind.value} not allowed in mode {mode.value}"
         if rec.confidence < self._config.auto_apply_confidence_threshold:
-            return False
-        return True
+            return (
+                f"confidence {rec.confidence:.2f} < threshold "
+                f"{self._config.auto_apply_confidence_threshold:.2f}"
+            )
+        return None
+
+    def _should_apply(self, rec: Recommendation) -> bool:
+        """`_check_policy` 의 bool 래퍼 — 하위 호환용."""
+        return self._check_policy(rec) is None
 
     def _translate(self, rec: Recommendation) -> Iterable[tuple[str, float | int]]:
         """Recommendation → (OSC address, value) 시퀀스.

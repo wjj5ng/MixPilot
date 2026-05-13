@@ -39,6 +39,7 @@ from mixpilot.domain import (
 )
 from mixpilot.dsp import MIN_DURATION_SECONDS
 from mixpilot.infra.audio_capture import SoundDeviceAudioSource
+from mixpilot.infra.audit import AuditLogger
 from mixpilot.infra.channel_map import YamlChannelMetadata
 from mixpilot.infra.m32_control import M32OscController
 from mixpilot.rules import (
@@ -276,7 +277,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if cfg.audio.enabled:
             try:
                 audio = SoundDeviceAudioSource(cfg.audio)
-                controller = M32OscController(cfg.m32)
+                audit_logger = (
+                    AuditLogger(path=cfg.audit_log_path)
+                    if cfg.audit_log_path is not None
+                    else None
+                )
+                controller = M32OscController(cfg.m32, audit_logger=audit_logger)
                 app.state.controller = controller
                 channel_map = YamlChannelMetadata(cfg.channel_map_path)
                 sources = list(await channel_map.get_all_channels())

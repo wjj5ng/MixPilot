@@ -5,10 +5,13 @@ ARCHITECTURE.md 규약: `infra`는 `domain` 포트를 구현하며 외부 라이
 """
 
 from .audio_capture import SoundDeviceAudioSource
+from .audit import AuditLogger, AuditOutcome
 from .channel_map import YamlChannelMetadata
 from .m32_control import M32OscController
 
 __all__ = [
+    "AuditLogger",
+    "AuditOutcome",
     "M32OscController",
     "SoundDeviceAudioSource",
     "YamlChannelMetadata",

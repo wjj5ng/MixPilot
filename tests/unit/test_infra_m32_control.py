@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from pathlib import Path
 
 import pytest
 
@@ -14,6 +16,7 @@ from mixpilot.domain import (
     Source,
     SourceCategory,
 )
+from mixpilot.infra import AuditLogger, AuditOutcome
 from mixpilot.infra.m32_control import M32OscController
 from mixpilot.runtime import AutoGuard
 
@@ -412,3 +415,110 @@ class TestAutoGuardIntegration:
         ctl, _ = self._ctl(auto_guard=guard)
         asyncio.run(ctl.apply(_rec(RecommendationKind.INFO, confidence=1.0)))
         assert guard.session_action_count == 0
+
+
+class TestAuditIntegration:
+    """ADR-0008 §3 — AuditLogger 연동."""
+
+    def _ctl_with_audit(
+        self, tmp_path: Path, *, mode: OperatingMode = OperatingMode.AUTO
+    ) -> tuple[M32OscController, FakeOscClient, Path]:
+        path = tmp_path / "audit.jsonl"
+        logger = AuditLogger(path=path, clock=lambda: 1000.0)
+        client = FakeOscClient()
+        ctl = M32OscController(
+            M32Config(
+                operating_mode=mode,
+                auto_apply_confidence_threshold=0.5,
+            ),
+            osc_client=client,
+            audit_logger=logger,
+        )
+        return ctl, client, path
+
+    def _read_records(self, path: Path) -> list[dict]:
+        return [json.loads(line) for line in path.read_text("utf-8").splitlines()]
+
+    def test_applied_action_logged_as_applied(self, tmp_path: Path) -> None:
+        ctl, _, path = self._ctl_with_audit(tmp_path)
+        asyncio.run(
+            ctl.apply(
+                _rec(
+                    RecommendationKind.GAIN_ADJUST,
+                    confidence=0.99,
+                    channel=2,
+                    params={"fader": 0.5},
+                )
+            )
+        )
+        recs = self._read_records(path)
+        assert len(recs) == 1
+        assert recs[0]["outcome"] == AuditOutcome.APPLIED.value
+        assert recs[0]["osc_messages"] == [["/ch/02/mix/fader", 0.5]]
+
+    def test_policy_block_logged_as_blocked_policy(self, tmp_path: Path) -> None:
+        ctl, _, path = self._ctl_with_audit(tmp_path)
+        asyncio.run(ctl.apply(_rec(RecommendationKind.INFO, confidence=1.0)))
+        recs = self._read_records(path)
+        assert len(recs) == 1
+        assert recs[0]["outcome"] == AuditOutcome.BLOCKED_POLICY.value
+        assert "kind info not allowed" in recs[0]["reason"]
+
+    def test_below_threshold_logged_as_blocked_policy(self, tmp_path: Path) -> None:
+        ctl, _, path = self._ctl_with_audit(tmp_path)
+        asyncio.run(ctl.apply(_rec(RecommendationKind.GAIN_ADJUST, confidence=0.1)))
+        recs = self._read_records(path)
+        assert len(recs) == 1
+        assert recs[0]["outcome"] == AuditOutcome.BLOCKED_POLICY.value
+        assert "confidence" in recs[0]["reason"]
+
+    def test_guard_block_logged_as_blocked_guard(self, tmp_path: Path) -> None:
+        path = tmp_path / "audit.jsonl"
+        logger = AuditLogger(path=path, clock=lambda: 1000.0)
+        client = FakeOscClient()
+        # 무한 부트스트랩 — 항상 가드 차단.
+        guard = AutoGuard(bootstrap_silence_seconds=10_000.0)
+        ctl = M32OscController(
+            M32Config(
+                operating_mode=OperatingMode.AUTO,
+                auto_apply_confidence_threshold=0.0,
+            ),
+            osc_client=client,
+            auto_guard=guard,
+            audit_logger=logger,
+        )
+        asyncio.run(
+            ctl.apply(
+                _rec(
+                    RecommendationKind.GAIN_ADJUST,
+                    confidence=0.99,
+                    params={"fader": 0.5},
+                )
+            )
+        )
+        recs = self._read_records(path)
+        assert len(recs) == 1
+        assert recs[0]["outcome"] == AuditOutcome.BLOCKED_GUARD.value
+        assert "bootstrap" in recs[0]["reason"]
+
+    def test_no_logger_means_no_file_writes(self, tmp_path: Path) -> None:
+        # audit_logger 없이도 정상 동작 — 어떤 파일도 생성되지 않음.
+        client = FakeOscClient()
+        ctl = M32OscController(
+            M32Config(
+                operating_mode=OperatingMode.AUTO,
+                auto_apply_confidence_threshold=0.0,
+            ),
+            osc_client=client,
+        )
+        asyncio.run(
+            ctl.apply(
+                _rec(
+                    RecommendationKind.GAIN_ADJUST,
+                    confidence=0.99,
+                    params={"fader": 0.5},
+                )
+            )
+        )
+        # tmp_path 안에 어떤 파일도 없어야 함.
+        assert list(tmp_path.iterdir()) == []

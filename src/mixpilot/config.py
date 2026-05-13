@@ -185,6 +185,10 @@ class Settings(BaseSettings):
     """프론트엔드 dev 서버(http://localhost:5173)에서의 CORS 요청을 허용한다.
     프로덕션은 FastAPI가 빌드 산출물을 같은 origin에서 서빙하므로 비활성 유지."""
 
+    audit_log_path: Path | None = None
+    """ADR-0008 §3 감사 로그 JSONL 경로. None이면 감사 로깅 비활성.
+    프로덕션은 운영자가 사후 검토할 수 있게 설정 권장."""
+
     # M32 채널 → 카테고리 매핑 파일 (외부 자료, service 단위로 갱신).
     channel_map_path: Path = Path("config/channels.yaml")
 
