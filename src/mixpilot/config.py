@@ -37,6 +37,10 @@ class OperatingMode(StrEnum):
 class AudioConfig(BaseModel):
     """오디오 입력 설정 (ADR-0004 — M32 USB 직접 캡처)."""
 
+    enabled: bool = False
+    """오디오 캡처 활성화 여부. False면 main.py 라이프스팬이 인프라를
+    초기화하지 않아 M32 미연결 환경에서도 서버가 뜬다. 라이브 운영 시 True."""
+
     device_substring: str = "M32"  # sounddevice 디바이스명 substring 매칭
     sample_rate: int = Field(default=48000, gt=0)
     block_size: int = Field(default=512, gt=0)  # 256-1024 권장 (ADR-0004)

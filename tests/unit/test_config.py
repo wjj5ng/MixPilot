@@ -27,6 +27,7 @@ def isolate_env(monkeypatch: pytest.MonkeyPatch) -> None:
 class TestSettingsDefaults:
     def test_audio_defaults_match_m32_usb(self) -> None:
         s = Settings()
+        assert s.audio.enabled is False
         assert s.audio.device_substring == "M32"
         assert s.audio.sample_rate == 48000
         assert s.audio.block_size == 512
@@ -57,6 +58,11 @@ class TestEnvOverride:
         monkeypatch.setenv("MIXPILOT_AUDIO__SAMPLE_RATE", "44100")
         s = Settings()
         assert s.audio.sample_rate == 44100
+
+    def test_audio_enabled_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MIXPILOT_AUDIO__ENABLED", "true")
+        s = Settings()
+        assert s.audio.enabled is True
 
     def test_m32_host_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MIXPILOT_M32__HOST", "10.0.0.42")

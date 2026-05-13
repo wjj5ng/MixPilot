@@ -43,6 +43,10 @@ class TestHealth:
         assert body["sample_rate"] == 48000
         assert body["num_channels"] == 32
 
+    def test_reports_audio_enabled_default_false(self, client: TestClient) -> None:
+        response = client.get("/health")
+        assert response.json()["audio_enabled"] is False
+
     def test_response_has_no_unexpected_fields(self, client: TestClient) -> None:
         response = client.get("/health")
         assert set(response.json().keys()) == {
@@ -50,6 +54,7 @@ class TestHealth:
             "operating_mode",
             "sample_rate",
             "num_channels",
+            "audio_enabled",
         }
 
 
@@ -76,3 +81,16 @@ class TestOpenAPI:
         paths = response.json()["paths"]
         assert "/health" in paths
         assert "get" in paths["/health"]
+
+    def test_recommendations_route_is_documented(self, client: TestClient) -> None:
+        response = client.get("/openapi.json")
+        paths = response.json()["paths"]
+        assert "/recommendations" in paths
+        assert "get" in paths["/recommendations"]
+
+    # NOTE: SSE 본문 라운드트립(open → publish → stream → assert)은 sync
+    # TestClient + asyncio.Queue 조합이 안정적이지 않다(thread-safe 아님,
+    # iter_lines 블로킹). 발행/구독/직렬화 흐름은 단위 테스트로 커버:
+    # tests/unit/test_main_helpers.py 의 TestRecommendationBroker /
+    # TestSerializeRecommendation. 향후 httpx.AsyncClient + ASGITransport로
+    # 진짜 async 통합 테스트 추가 예정.
