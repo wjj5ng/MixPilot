@@ -51,6 +51,10 @@ class TestHealth:
         response = client.get("/health")
         assert response.json()["lufs_analysis_enabled"] is False
 
+    def test_reports_feedback_analysis_default_false(self, client: TestClient) -> None:
+        response = client.get("/health")
+        assert response.json()["feedback_analysis_enabled"] is False
+
     def test_response_has_no_unexpected_fields(self, client: TestClient) -> None:
         response = client.get("/health")
         assert set(response.json().keys()) == {
@@ -60,6 +64,7 @@ class TestHealth:
             "num_channels",
             "audio_enabled",
             "lufs_analysis_enabled",
+            "feedback_analysis_enabled",
         }
 
 

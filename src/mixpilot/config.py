@@ -79,6 +79,29 @@ class LufsTargets(BaseModel):
         return getattr(self, category, self.unknown)
 
 
+class FeedbackAnalysisConfig(BaseModel):
+    """라이브 feedback (하울링) 감지 설정.
+
+    채널마다 별도의 `FeedbackDetector` 인스턴스를 두고 매 프레임 업데이트한다.
+    PNR 임계와 지속성(persistence)을 함께 만족할 때만 alert 발화.
+    """
+
+    enabled: bool = False
+    """라이브 feedback 감지 활성화 여부. 디폴트 off."""
+
+    pnr_threshold_db: float = Field(default=15.0, ge=0.0)
+    """Peak-to-Neighbor Ratio 임계(dB). 12~20 권장."""
+
+    persistence_frames: int = Field(default=3, gt=0)
+    """N 연속 프레임 candidate일 때만 alert. 1~5 권장."""
+
+    min_frequency_hz: float = Field(default=100.0, gt=0.0)
+    """이 미만 주파수는 분석에서 제외 (베이스 노이즈)."""
+
+    max_frequency_hz: float = Field(default=8000.0, gt=0.0)
+    """이 초과 주파수는 분석에서 제외. 보컬·라이브 악기 영역 기준."""
+
+
 class LufsAnalysisConfig(BaseModel):
     """라이브 LUFS 분석 설정.
 
@@ -136,6 +159,9 @@ class Settings(BaseSettings):
     lufs: LufsTargets = Field(default_factory=LufsTargets)
     rms_dbfs: RmsDbfsTargets = Field(default_factory=RmsDbfsTargets)
     lufs_analysis: LufsAnalysisConfig = Field(default_factory=LufsAnalysisConfig)
+    feedback_analysis: FeedbackAnalysisConfig = Field(
+        default_factory=FeedbackAnalysisConfig
+    )
 
     # M32 채널 → 카테고리 매핑 파일 (외부 자료, service 단위로 갱신).
     channel_map_path: Path = Path("config/channels.yaml")

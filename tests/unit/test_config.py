@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from mixpilot.config import (
     AudioConfig,
+    FeedbackAnalysisConfig,
     LufsAnalysisConfig,
     LufsTargets,
     M32Config,
@@ -64,6 +65,14 @@ class TestSettingsDefaults:
         assert s.lufs_analysis.buffer_seconds == 1.0
         assert s.lufs_analysis.eval_interval_frames == 50
 
+    def test_feedback_analysis_defaults(self) -> None:
+        s = Settings()
+        assert s.feedback_analysis.enabled is False
+        assert s.feedback_analysis.pnr_threshold_db == 15.0
+        assert s.feedback_analysis.persistence_frames == 3
+        assert s.feedback_analysis.min_frequency_hz == 100.0
+        assert s.feedback_analysis.max_frequency_hz == 8000.0
+
     def test_channel_map_path_default(self) -> None:
         s = Settings()
         assert s.channel_map_path == Path("config/channels.yaml")
@@ -110,6 +119,17 @@ class TestEnvOverride:
         assert s.lufs_analysis.enabled is True
         assert s.lufs_analysis.buffer_seconds == 2.5
         assert s.lufs_analysis.eval_interval_frames == 30
+
+    def test_feedback_analysis_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MIXPILOT_FEEDBACK_ANALYSIS__ENABLED", "true")
+        monkeypatch.setenv("MIXPILOT_FEEDBACK_ANALYSIS__PNR_THRESHOLD_DB", "18.0")
+        monkeypatch.setenv("MIXPILOT_FEEDBACK_ANALYSIS__PERSISTENCE_FRAMES", "5")
+        monkeypatch.setenv("MIXPILOT_FEEDBACK_ANALYSIS__MAX_FREQUENCY_HZ", "10000")
+        s = Settings()
+        assert s.feedback_analysis.enabled is True
+        assert s.feedback_analysis.pnr_threshold_db == 18.0
+        assert s.feedback_analysis.persistence_frames == 5
+        assert s.feedback_analysis.max_frequency_hz == 10000.0
 
     def test_channel_map_path_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MIXPILOT_CHANNEL_MAP_PATH", "/etc/mixpilot/channels.yaml")
@@ -202,6 +222,20 @@ class TestValidation:
             LufsAnalysisConfig(eval_interval_frames=0)
         with pytest.raises(ValidationError):
             LufsAnalysisConfig(eval_interval_frames=-1)
+
+    def test_rejects_non_positive_persistence_frames(self) -> None:
+        with pytest.raises(ValidationError):
+            FeedbackAnalysisConfig(persistence_frames=0)
+
+    def test_rejects_negative_pnr_threshold(self) -> None:
+        with pytest.raises(ValidationError):
+            FeedbackAnalysisConfig(pnr_threshold_db=-1.0)
+
+    def test_rejects_non_positive_frequency_range(self) -> None:
+        with pytest.raises(ValidationError):
+            FeedbackAnalysisConfig(min_frequency_hz=0)
+        with pytest.raises(ValidationError):
+            FeedbackAnalysisConfig(max_frequency_hz=0)
 
 
 class TestOperatingMode:

@@ -39,8 +39,12 @@ from mixpilot.dsp import MIN_DURATION_SECONDS
 from mixpilot.infra.audio_capture import SoundDeviceAudioSource
 from mixpilot.infra.channel_map import YamlChannelMetadata
 from mixpilot.infra.m32_control import M32OscController
-from mixpilot.rules import evaluate_all_channels, evaluate_all_channels_lufs
-from mixpilot.runtime import RollingBuffer
+from mixpilot.rules import (
+    evaluate_all_channels,
+    evaluate_all_channels_lufs,
+    evaluate_all_feedback,
+)
+from mixpilot.runtime import FeedbackDetector, RollingBuffer
 
 logger = logging.getLogger(__name__)
 
@@ -167,13 +171,19 @@ async def _processing_loop(
     lufs_buffer: RollingBuffer | None = None,
     lufs_targets: dict[str, float] | None = None,
     lufs_eval_interval_frames: int = 50,
+    feedback_detectors: dict[int, FeedbackDetector] | None = None,
+    feedback_pnr_threshold_db: float = 15.0,
 ) -> None:
     """오디오 프레임 → 룰 평가 → 제어 송신 + 브로커 푸시.
 
-    RMS 룰은 매 프레임. LUFS 룰은 `lufs_buffer`가 주입되었고 ~400ms 이상
-    누적되었을 때만, `lufs_eval_interval_frames` 마다 평가.
+    - RMS 룰: 매 프레임.
+    - LUFS 룰: `lufs_buffer`가 주입되었고 ~400ms 이상 누적되었을 때만,
+      `lufs_eval_interval_frames` 마다 평가.
+    - Feedback 룰: `feedback_detectors`가 주입되었으면 매 프레임 채널별로
+      detector 업데이트. 지속 검증된 peaks만 Recommendation 발화.
     """
     lufs_enabled = lufs_buffer is not None and lufs_targets is not None
+    feedback_enabled = feedback_detectors is not None
     frame_count = 0
     try:
         async for signal in audio.stream():
@@ -182,7 +192,6 @@ async def _processing_loop(
             recommendations = evaluate_all_channels(channels, rms_targets)
 
             if lufs_enabled:
-                # 위 if문으로 lufs_buffer / lufs_targets 둘 다 None 아님이 보장.
                 assert lufs_buffer is not None
                 assert lufs_targets is not None
                 lufs_buffer.write(signal.samples)
@@ -201,6 +210,25 @@ async def _processing_loop(
                     )
                     recommendations.extend(
                         evaluate_all_channels_lufs(lufs_channels, lufs_targets)
+                    )
+
+            if feedback_enabled:
+                assert feedback_detectors is not None
+                peaks_by_source = {}
+                for channel in channels:
+                    ch_id = int(channel.source.channel)
+                    detector = feedback_detectors.get(ch_id)
+                    if detector is None:
+                        continue
+                    peaks = detector.update(channel.samples)
+                    if peaks:
+                        peaks_by_source[channel.source] = peaks
+                if peaks_by_source:
+                    recommendations.extend(
+                        evaluate_all_feedback(
+                            peaks_by_source,
+                            pnr_threshold_db=feedback_pnr_threshold_db,
+                        )
                     )
 
             for rec in recommendations:
@@ -250,6 +278,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     )
                     lufs_targets = _build_lufs_targets(cfg)
 
+                feedback_detectors: dict[int, FeedbackDetector] | None = None
+                if cfg.feedback_analysis.enabled:
+                    feedback_detectors = {
+                        ch_id: FeedbackDetector(
+                            cfg.audio.sample_rate,
+                            persistence_frames=cfg.feedback_analysis.persistence_frames,
+                            pnr_threshold_db=cfg.feedback_analysis.pnr_threshold_db,
+                            min_frequency_hz=cfg.feedback_analysis.min_frequency_hz,
+                            max_frequency_hz=cfg.feedback_analysis.max_frequency_hz,
+                        )
+                        for ch_id in range(1, cfg.audio.num_channels + 1)
+                    }
+
                 task = asyncio.create_task(
                     _processing_loop(
                         audio,
@@ -260,13 +301,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         lufs_buffer=lufs_buffer,
                         lufs_targets=lufs_targets,
                         lufs_eval_interval_frames=cfg.lufs_analysis.eval_interval_frames,
+                        feedback_detectors=feedback_detectors,
+                        feedback_pnr_threshold_db=cfg.feedback_analysis.pnr_threshold_db,
                     )
                 )
                 logger.info(
-                    "audio processing started (mode=%s, device=%s, lufs=%s)",
+                    "audio started (mode=%s device=%s lufs=%s feedback=%s)",
                     cfg.m32.operating_mode.value,
                     cfg.audio.device_substring,
                     "on" if cfg.lufs_analysis.enabled else "off",
+                    "on" if cfg.feedback_analysis.enabled else "off",
                 )
             except Exception:
                 logger.exception(
@@ -301,7 +345,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/health")
     async def health() -> dict[str, Any]:
-        """헬스 체크 — 운영 모드·오디오 설정·캡처 활성 여부 반환."""
+        """헬스 체크 — 운영 모드·오디오 설정·캡처/분석 활성 여부 반환."""
         return {
             "status": "ok",
             "operating_mode": cfg.m32.operating_mode.value,
@@ -309,6 +353,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "num_channels": cfg.audio.num_channels,
             "audio_enabled": cfg.audio.enabled,
             "lufs_analysis_enabled": cfg.lufs_analysis.enabled,
+            "feedback_analysis_enabled": cfg.feedback_analysis.enabled,
         }
 
     @app.get("/recommendations")
