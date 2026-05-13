@@ -1,0 +1,59 @@
+# LUFS 기준 회귀 케이스 — 속성 기반 회귀.
+# 변경이 일어나도 이 값들이 깨지면 안 됨. 깨지면 의도적이라면 ADR + 이 파일 갱신.
+#
+# 정확한 LUFS 수치는 pyloudnorm 구현에 의존하므로 **속성**으로 검증:
+# - 무음 → floor
+# - 더 큰 amplitude → 더 큰 LUFS
+# - 같은 입력 → 같은 출력
+#
+# 정확값이 필요하면 ITU-R BS.1770-4 conformance test signals 도입 후 갱신.
+
+id: lufs-baseline
+description: LUFS 분석의 결정적 회귀 — 사인파·무음·다중 amplitude.
+function_under_test: mixpilot.dsp.lufs.lufs_integrated
+
+cases:
+  - id: lufs-silence
+    input:
+      kind: silence
+      sample_rate: 48000
+      duration_seconds: 1.0
+    expected:
+      value: -70.0  # SILENCE_FLOOR_LUFS
+      tolerance_abs: 0.0
+
+  - id: lufs-sine-1khz-amp0.1
+    input:
+      kind: sine
+      sample_rate: 48000
+      frequency_hz: 1000
+      amplitude: 0.1
+      duration_seconds: 1.0
+    expected:
+      # 1kHz 사인 amp 0.1: RMS ≈ -23 dBFS. K-weighting은 1kHz에서 거의 중성
+      # (boost는 2-3kHz 영역), 따라서 LUFS도 ≈ -23.
+      value_range: [-25.0, -21.0]
+
+  - id: lufs-sine-1khz-amp0.2
+    input:
+      kind: sine
+      sample_rate: 48000
+      frequency_hz: 1000
+      amplitude: 0.2
+      duration_seconds: 1.0
+    expected:
+      # amp 0.1 케이스보다 +6 LUFS 더 높아야 함.
+      delta_from: lufs-sine-1khz-amp0.1
+      delta_value: 6.0
+      tolerance_abs: 0.1
+
+  - id: lufs-sine-too-short
+    input:
+      kind: sine
+      sample_rate: 48000
+      frequency_hz: 1000
+      amplitude: 0.1
+      duration_seconds: 0.1  # 100ms — EBU R128 최소(400ms) 미만
+    expected:
+      raises: ValueError
+      match: "too short"
