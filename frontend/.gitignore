@@ -2,6 +2,9 @@ node_modules/
 dist/
 .svelte-kit/
 
+# OpenAPI codegen intermediate file
+.openapi-temp.json
+
 # Logs
 *.log
 npm-debug.log*

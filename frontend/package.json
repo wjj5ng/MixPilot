@@ -9,7 +9,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "gen:api": "openapi-typescript http://127.0.0.1:8000/openapi.json -o src/lib/api-types.ts"
+    "gen:api": "openapi-typescript http://127.0.0.1:8000/openapi.json -o src/lib/api-types.ts",
+    "gen:api:offline": "uv --project .. run python -m mixpilot.scripts.export_openapi -o .openapi-temp.json && openapi-typescript .openapi-temp.json -o src/lib/api-types.ts && rm .openapi-temp.json"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.3",
