@@ -121,7 +121,7 @@ M32 32채널을 입력 소스 카테고리(보컬·설교자·성가대·악기)
 | 번호 | 제목 | 상태 |
 |---|---|---|
 | [ADR-0001](docs/adr/0001-dsp-helper-libraries.md) | DSP 보조 라이브러리 — librosa 미도입 | Accepted |
-| ADR-0002 | 대시보드 실시간 push 방식 (WebSocket vs SSE) | Open |
+| [ADR-0002](docs/adr/0002-dashboard-realtime-push.md) | 대시보드 실시간 push — SSE 채택 | Accepted |
 | ADR-0003 | 메트릭 저장소 선정 | Open |
 | [ADR-0004](docs/adr/0004-audio-input-m32-usb.md) | 오디오 입력 — M32 USB 직접 캡처 (sounddevice) | Accepted |
 | [ADR-0005](docs/adr/0005-control-output-x32-osc.md) | 제어 출력 — X32 OSC over UDP로 M32 직결 | Accepted |
