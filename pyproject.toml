@@ -1,0 +1,29 @@
+[project]
+name = "mixpilot"
+version = "0.1.0"
+description = "MixPilot — real-time audio analysis and mixing assistant for live audio environments"
+authors = [
+    { name = "Jay", email = "wjje5ng@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.136.1",
+    "numpy>=2.4.4",
+    "pyloudnorm>=0.2.0",
+    "scipy>=1.17.1",
+    "uvicorn[standard]>=0.46.0",
+]
+
+[project.scripts]
+mixpilot = "mixpilot:main"
+
+[build-system]
+requires = ["uv_build>=0.11.12,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.12",
+]

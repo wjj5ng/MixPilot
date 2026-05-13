@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": ["Edit", "Write"]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v ruff >/dev/null 2>&1 && { ruff format . 2>/dev/null; ruff check --fix --exit-zero . 2>/dev/null; }; true"
+          }
+        ]
+      }
+    ]
+  }
+}

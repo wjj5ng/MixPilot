@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "createdAt": "2026-05-13T23:29:00+09:00",
+  "language": "Python",
+  "projectType": "API 서비스",
+  "packageManager": "uv",
+  "testFramework": "pytest",
+  "ci": "GitHub Actions",
+  "gitInit": true,
+  "layersApplied": ["L0", "L1", "L3", "L4", "L5"],
+  "layersDeferred": [],
+  "layersOptedOut": ["L2"],
+  "notes": "ruff/uv/pytest not on PATH at setup time. L1 hook uses command -v guard so it's a no-op until tools are installed. Recommended: `brew install uv` then `uv tool install ruff`."
+}
