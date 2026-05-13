@@ -13,6 +13,7 @@ from mixpilot.config import (
     LufsTargets,
     M32Config,
     OperatingMode,
+    RmsDbfsTargets,
     Settings,
 )
 
@@ -48,6 +49,14 @@ class TestSettingsDefaults:
         assert s.lufs.instrument == -22.0
         assert s.lufs.unknown == -23.0
 
+    def test_rms_dbfs_defaults(self) -> None:
+        s = Settings()
+        assert s.rms_dbfs.vocal == -18.0
+        assert s.rms_dbfs.preacher == -20.0
+        assert s.rms_dbfs.choir == -22.0
+        assert s.rms_dbfs.instrument == -24.0
+        assert s.rms_dbfs.unknown == -26.0
+
     def test_channel_map_path_default(self) -> None:
         s = Settings()
         assert s.channel_map_path == Path("config/channels.yaml")
@@ -79,6 +88,11 @@ class TestEnvOverride:
         s = Settings()
         assert s.lufs.vocal == -14.5
 
+    def test_rms_dbfs_vocal_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MIXPILOT_RMS_DBFS__VOCAL", "-19.0")
+        s = Settings()
+        assert s.rms_dbfs.vocal == -19.0
+
     def test_channel_map_path_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MIXPILOT_CHANNEL_MAP_PATH", "/etc/mixpilot/channels.yaml")
         s = Settings()
@@ -101,6 +115,28 @@ class TestLufsTargets:
     def test_unknown_category_returns_unknown_target(self) -> None:
         lufs = LufsTargets()
         assert lufs.for_category("unknown") == lufs.unknown
+
+
+class TestRmsDbfsTargets:
+    def test_for_category_known(self) -> None:
+        t = RmsDbfsTargets()
+        assert t.for_category("vocal") == -18.0
+        assert t.for_category("preacher") == -20.0
+        assert t.for_category("choir") == -22.0
+        assert t.for_category("instrument") == -24.0
+
+    def test_for_category_unknown_falls_back(self) -> None:
+        t = RmsDbfsTargets()
+        assert t.for_category("nonexistent") == t.unknown
+        assert t.for_category("") == t.unknown
+
+    def test_rms_dbfs_targets_lower_than_lufs(self) -> None:
+        # 같은 카테고리에서 RMS dBFS 타깃이 LUFS 타깃보다 더 음수여야 함
+        # (K-weighting boost 보정).
+        lufs = LufsTargets()
+        rms = RmsDbfsTargets()
+        for cat in ("vocal", "preacher", "choir", "instrument", "unknown"):
+            assert rms.for_category(cat) < lufs.for_category(cat)
 
 
 class TestValidation:

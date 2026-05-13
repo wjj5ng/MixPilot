@@ -123,20 +123,36 @@ def _serialize_recommendation(rec: Recommendation) -> dict[str, Any]:
     }
 
 
-def _build_targets(settings: Settings) -> dict[str, float]:
-    """settings → 카테고리별 타깃 dict.
+def _build_rms_dbfs_targets(settings: Settings) -> dict[str, float]:
+    """settings.rms_dbfs → 카테고리별 RMS dBFS 타깃 dict.
 
-    현재는 LUFS DSP가 미구현이라 `settings.lufs` 필드를 *임시로* dBFS 타깃으로
-    사용한다(`rules.evaluate_all_channels`가 dBFS를 기대). LUFS 함수가 들어오면
-    별도 `LufsTargets`와 `RmsDbfsTargets`로 분리하고 룰 함수도 LUFS 버전을 추가.
+    `rules.evaluate_all_channels`(RMS 기반) 처리 루프에 주입. LUFS 타깃은
+    별도(`_build_lufs_targets`) — 측정에 ~400ms 버퍼가 필요해 라이브 프레임
+    루프에는 아직 들어가지 않는다.
     """
-    lufs = settings.lufs
+    t = settings.rms_dbfs
     return {
-        "vocal": lufs.vocal,
-        "preacher": lufs.preacher,
-        "choir": lufs.choir,
-        "instrument": lufs.instrument,
-        "unknown": lufs.unknown,
+        "vocal": t.vocal,
+        "preacher": t.preacher,
+        "choir": t.choir,
+        "instrument": t.instrument,
+        "unknown": t.unknown,
+    }
+
+
+def _build_lufs_targets(settings: Settings) -> dict[str, float]:
+    """settings.lufs → 카테고리별 LUFS 타깃 dict.
+
+    `rules.evaluate_all_channels_lufs`에 주입. 라이브 처리 루프에 통합하려면
+    채널별 누적 버퍼(~400ms)가 먼저 필요 — 후속 작업.
+    """
+    t = settings.lufs
+    return {
+        "vocal": t.vocal,
+        "preacher": t.preacher,
+        "choir": t.choir,
+        "instrument": t.instrument,
+        "unknown": t.unknown,
     }
 
 
@@ -184,7 +200,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 channel_map = YamlChannelMetadata(cfg.channel_map_path)
                 sources = list(await channel_map.get_all_channels())
                 sources_by_id = {int(s.channel): s for s in sources}
-                targets = _build_targets(cfg)
+                targets = _build_rms_dbfs_targets(cfg)
                 task = asyncio.create_task(
                     _processing_loop(audio, controller, broker, sources_by_id, targets)
                 )

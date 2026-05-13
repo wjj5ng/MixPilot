@@ -7,7 +7,7 @@ import asyncio
 import numpy as np
 import pytest
 
-from mixpilot.config import LufsTargets, Settings
+from mixpilot.config import LufsTargets, RmsDbfsTargets, Settings
 from mixpilot.domain import (
     AudioFormat,
     ChannelId,
@@ -19,7 +19,8 @@ from mixpilot.domain import (
 )
 from mixpilot.main import (
     RecommendationBroker,
-    _build_targets,
+    _build_lufs_targets,
+    _build_rms_dbfs_targets,
     _serialize_recommendation,
     _split_signal_to_channels,
 )
@@ -181,10 +182,47 @@ class TestSerializeRecommendation:
         assert original == {"x": 1.0}
 
 
-class TestBuildTargets:
+class TestBuildRmsDbfsTargets:
     def test_returns_all_five_categories(self) -> None:
+        targets = _build_rms_dbfs_targets(Settings())
+        assert set(targets.keys()) == {
+            "vocal",
+            "preacher",
+            "choir",
+            "instrument",
+            "unknown",
+        }
+
+    def test_values_come_from_rms_dbfs_block(self) -> None:
         settings = Settings()
-        targets = _build_targets(settings)
+        settings.rms_dbfs = RmsDbfsTargets(
+            vocal=-1.0,
+            preacher=-2.0,
+            choir=-3.0,
+            instrument=-4.0,
+            unknown=-5.0,
+        )
+        targets = _build_rms_dbfs_targets(settings)
+        assert targets == {
+            "vocal": -1.0,
+            "preacher": -2.0,
+            "choir": -3.0,
+            "instrument": -4.0,
+            "unknown": -5.0,
+        }
+
+    def test_independent_of_lufs_block(self) -> None:
+        # rms_dbfs 와 lufs는 서로 다른 필드 — lufs 변경이 rms_dbfs에 영향 없음.
+        settings = Settings()
+        settings.lufs = LufsTargets(vocal=-1.0)
+        targets = _build_rms_dbfs_targets(settings)
+        # 디폴트 rms_dbfs 값 유지.
+        assert targets["vocal"] == -18.0
+
+
+class TestBuildLufsTargets:
+    def test_returns_all_five_categories(self) -> None:
+        targets = _build_lufs_targets(Settings())
         assert set(targets.keys()) == {
             "vocal",
             "preacher",
@@ -202,7 +240,7 @@ class TestBuildTargets:
             instrument=-4.0,
             unknown=-5.0,
         )
-        targets = _build_targets(settings)
+        targets = _build_lufs_targets(settings)
         assert targets == {
             "vocal": -1.0,
             "preacher": -2.0,

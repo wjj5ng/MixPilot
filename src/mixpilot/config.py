@@ -59,16 +59,16 @@ class M32Config(BaseModel):
 class LufsTargets(BaseModel):
     """카테고리별 LUFS 목표 (EBU R128 integrated).
 
-    값은 dBFS와 다른 단위 — LUFS는 인지 라우드니스 기준.
-    카테고리 이름은 도메인 `SourceCategory` 값과 정렬되되, 결합은 피한다
-    (config는 다른 mixpilot 모듈을 import하지 않음).
+    LUFS는 K-weighting + 게이팅 기반 인지 라우드니스. 측정에 최소 ~400ms
+    신호 필요 — 라이브 프레임 단위로는 못 쓰고 누적 버퍼/오프라인에서만 적용.
+    카테고리 이름은 도메인 `SourceCategory` 값과 정렬하되 import 결합은 피한다.
     """
 
     vocal: float = -16.0
     preacher: float = -18.0
     choir: float = -20.0
     instrument: float = -22.0
-    unknown: float = -23.0  # 보수적 폴백
+    unknown: float = -23.0  # 보수적 폴백 / EBU R128 broadcast target.
 
     def for_category(self, category: str) -> float:
         """카테고리 string → LUFS 목표값.
@@ -76,6 +76,26 @@ class LufsTargets(BaseModel):
         유효 카테고리: 'vocal' | 'preacher' | 'choir' | 'instrument' | 'unknown'.
         매칭되지 않으면 `unknown` 목표값으로 폴백.
         """
+        return getattr(self, category, self.unknown)
+
+
+class RmsDbfsTargets(BaseModel):
+    """카테고리별 RMS dBFS 목표 — 라이브 프레임 단위 분석용.
+
+    LUFS와 의도적으로 분리. LUFS는 K-weighted 인지 라우드니스, RMS dBFS는
+    단순 평균 에너지. RMS는 짧은 프레임(수~수십 ms)에서도 즉시 측정 가능.
+
+    값은 일반적으로 같은 카테고리의 LUFS 목표보다 2~3 dB 더 낮다 — K-weighting이
+    중주파에서 평균 +2~3 dB 부스트하기 때문.
+    """
+
+    vocal: float = -18.0
+    preacher: float = -20.0
+    choir: float = -22.0
+    instrument: float = -24.0
+    unknown: float = -26.0
+
+    def for_category(self, category: str) -> float:
         return getattr(self, category, self.unknown)
 
 
@@ -96,6 +116,7 @@ class Settings(BaseSettings):
     audio: AudioConfig = Field(default_factory=AudioConfig)
     m32: M32Config = Field(default_factory=M32Config)
     lufs: LufsTargets = Field(default_factory=LufsTargets)
+    rms_dbfs: RmsDbfsTargets = Field(default_factory=RmsDbfsTargets)
 
     # M32 채널 → 카테고리 매핑 파일 (외부 자료, service 단위로 갱신).
     channel_map_path: Path = Path("config/channels.yaml")
