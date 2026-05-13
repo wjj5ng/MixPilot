@@ -73,6 +73,7 @@ ARCHITECTURE.md        # 모듈 경계·의존성 방향
 - **에러 처리**: 외부 입력(API 바디·오디오 스트림)만 검증. 내부 호출은 신뢰. 보안·신호 무결성 경계에서만 raise.
 - **실시간 코드 주의**: DSP 핫패스에서는 메모리 할당 최소화(`np.empty`·재사용), GIL 영향 줄이려 `numpy`·`scipy` 벡터화 우선, 필요 시 `numba`/`cython` 검토.
 - **포맷·린트**: ruff. 편집 후 자동 실행되도록 훅 설정됨(`.claude/settings.json`).
+- **커밋 메시지**: 한국어로 작성. 타입 prefix(`feat:` / `fix:` / `chore:` / `docs:` / `refactor:` / `test:` 등)는 영문 컨벤션 유지하되, subject 설명·body·footer는 한국어로. 예: `feat(domain): 도메인 모델·포트 정의 추가`.
 
 ## Architecture
 
