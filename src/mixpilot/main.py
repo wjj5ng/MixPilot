@@ -22,6 +22,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
+import numpy as np
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 
@@ -34,10 +35,12 @@ from mixpilot.domain import (
     Source,
     SourceCategory,
 )
+from mixpilot.dsp import MIN_DURATION_SECONDS
 from mixpilot.infra.audio_capture import SoundDeviceAudioSource
 from mixpilot.infra.channel_map import YamlChannelMetadata
 from mixpilot.infra.m32_control import M32OscController
-from mixpilot.rules import evaluate_all_channels
+from mixpilot.rules import evaluate_all_channels, evaluate_all_channels_lufs
+from mixpilot.runtime import RollingBuffer
 
 logger = logging.getLogger(__name__)
 
@@ -126,9 +129,7 @@ def _serialize_recommendation(rec: Recommendation) -> dict[str, Any]:
 def _build_rms_dbfs_targets(settings: Settings) -> dict[str, float]:
     """settings.rms_dbfs → 카테고리별 RMS dBFS 타깃 dict.
 
-    `rules.evaluate_all_channels`(RMS 기반) 처리 루프에 주입. LUFS 타깃은
-    별도(`_build_lufs_targets`) — 측정에 ~400ms 버퍼가 필요해 라이브 프레임
-    루프에는 아직 들어가지 않는다.
+    `rules.evaluate_all_channels`에 주입 — 라이브 매 프레임 평가용.
     """
     t = settings.rms_dbfs
     return {
@@ -143,8 +144,8 @@ def _build_rms_dbfs_targets(settings: Settings) -> dict[str, float]:
 def _build_lufs_targets(settings: Settings) -> dict[str, float]:
     """settings.lufs → 카테고리별 LUFS 타깃 dict.
 
-    `rules.evaluate_all_channels_lufs`에 주입. 라이브 처리 루프에 통합하려면
-    채널별 누적 버퍼(~400ms)가 먼저 필요 — 후속 작업.
+    `rules.evaluate_all_channels_lufs`에 주입. 처리 루프는 `RollingBuffer`에
+    누적된 ~400ms+ 신호 위에서 주기적으로 평가한다.
     """
     t = settings.lufs
     return {
@@ -161,13 +162,47 @@ async def _processing_loop(
     controller: M32OscController,
     broker: RecommendationBroker,
     sources_by_id: dict[int, Source],
-    targets: dict[str, float],
+    rms_targets: dict[str, float],
+    *,
+    lufs_buffer: RollingBuffer | None = None,
+    lufs_targets: dict[str, float] | None = None,
+    lufs_eval_interval_frames: int = 50,
 ) -> None:
-    """오디오 프레임 → 룰 평가 → 제어 송신 + 브로커 푸시."""
+    """오디오 프레임 → 룰 평가 → 제어 송신 + 브로커 푸시.
+
+    RMS 룰은 매 프레임. LUFS 룰은 `lufs_buffer`가 주입되었고 ~400ms 이상
+    누적되었을 때만, `lufs_eval_interval_frames` 마다 평가.
+    """
+    lufs_enabled = lufs_buffer is not None and lufs_targets is not None
+    frame_count = 0
     try:
         async for signal in audio.stream():
+            frame_count += 1
             channels = _split_signal_to_channels(signal, sources_by_id)
-            recommendations = evaluate_all_channels(channels, targets)
+            recommendations = evaluate_all_channels(channels, rms_targets)
+
+            if lufs_enabled:
+                # 위 if문으로 lufs_buffer / lufs_targets 둘 다 None 아님이 보장.
+                assert lufs_buffer is not None
+                assert lufs_targets is not None
+                lufs_buffer.write(signal.samples)
+                if (
+                    frame_count % lufs_eval_interval_frames == 0
+                    and lufs_buffer.fill / signal.format.sample_rate
+                    >= MIN_DURATION_SECONDS
+                ):
+                    buffered_signal = Signal(
+                        samples=lufs_buffer.snapshot(),
+                        format=signal.format,
+                        capture_seq=signal.capture_seq,
+                    )
+                    lufs_channels = _split_signal_to_channels(
+                        buffered_signal, sources_by_id
+                    )
+                    recommendations.extend(
+                        evaluate_all_channels_lufs(lufs_channels, lufs_targets)
+                    )
+
             for rec in recommendations:
                 await controller.apply(rec)
                 broker.publish(rec)
@@ -200,14 +235,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 channel_map = YamlChannelMetadata(cfg.channel_map_path)
                 sources = list(await channel_map.get_all_channels())
                 sources_by_id = {int(s.channel): s for s in sources}
-                targets = _build_rms_dbfs_targets(cfg)
+                rms_targets = _build_rms_dbfs_targets(cfg)
+
+                lufs_buffer: RollingBuffer | None = None
+                lufs_targets: dict[str, float] | None = None
+                if cfg.lufs_analysis.enabled:
+                    capacity = int(
+                        cfg.audio.sample_rate * cfg.lufs_analysis.buffer_seconds
+                    )
+                    lufs_buffer = RollingBuffer(
+                        capacity_frames=capacity,
+                        num_channels=cfg.audio.num_channels,
+                        dtype=np.float32,
+                    )
+                    lufs_targets = _build_lufs_targets(cfg)
+
                 task = asyncio.create_task(
-                    _processing_loop(audio, controller, broker, sources_by_id, targets)
+                    _processing_loop(
+                        audio,
+                        controller,
+                        broker,
+                        sources_by_id,
+                        rms_targets,
+                        lufs_buffer=lufs_buffer,
+                        lufs_targets=lufs_targets,
+                        lufs_eval_interval_frames=cfg.lufs_analysis.eval_interval_frames,
+                    )
                 )
                 logger.info(
-                    "audio processing started (mode=%s, device=%s)",
+                    "audio processing started (mode=%s, device=%s, lufs=%s)",
                     cfg.m32.operating_mode.value,
                     cfg.audio.device_substring,
+                    "on" if cfg.lufs_analysis.enabled else "off",
                 )
             except Exception:
                 logger.exception(
@@ -249,6 +308,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "sample_rate": cfg.audio.sample_rate,
             "num_channels": cfg.audio.num_channels,
             "audio_enabled": cfg.audio.enabled,
+            "lufs_analysis_enabled": cfg.lufs_analysis.enabled,
         }
 
     @app.get("/recommendations")

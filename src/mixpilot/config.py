@@ -79,6 +79,24 @@ class LufsTargets(BaseModel):
         return getattr(self, category, self.unknown)
 
 
+class LufsAnalysisConfig(BaseModel):
+    """라이브 LUFS 분석 설정.
+
+    LUFS는 K-weighting + 게이팅이라 ~400ms+ 신호가 필요. 라이브 프레임 단위로는
+    못 쓰므로 채널별 ring buffer에 누적했다가 주기적으로 평가한다. 비활성이면
+    RMS 룰만 사용.
+    """
+
+    enabled: bool = False
+    """라이브 LUFS 평가 활성화 여부. 디폴트 off — RMS만 사용."""
+
+    buffer_seconds: float = Field(default=1.0, gt=0.0, le=10.0)
+    """LUFS 계산용 누적 버퍼 길이(초). 1.0~3.0 권장."""
+
+    eval_interval_frames: int = Field(default=50, gt=0)
+    """N 프레임마다 LUFS 평가. block=512@48k면 50프레임 ≈ 533ms 주기."""
+
+
 class RmsDbfsTargets(BaseModel):
     """카테고리별 RMS dBFS 목표 — 라이브 프레임 단위 분석용.
 
@@ -117,6 +135,7 @@ class Settings(BaseSettings):
     m32: M32Config = Field(default_factory=M32Config)
     lufs: LufsTargets = Field(default_factory=LufsTargets)
     rms_dbfs: RmsDbfsTargets = Field(default_factory=RmsDbfsTargets)
+    lufs_analysis: LufsAnalysisConfig = Field(default_factory=LufsAnalysisConfig)
 
     # M32 채널 → 카테고리 매핑 파일 (외부 자료, service 단위로 갱신).
     channel_map_path: Path = Path("config/channels.yaml")

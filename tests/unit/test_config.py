@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from mixpilot.config import (
     AudioConfig,
+    LufsAnalysisConfig,
     LufsTargets,
     M32Config,
     OperatingMode,
@@ -57,6 +58,12 @@ class TestSettingsDefaults:
         assert s.rms_dbfs.instrument == -24.0
         assert s.rms_dbfs.unknown == -26.0
 
+    def test_lufs_analysis_defaults(self) -> None:
+        s = Settings()
+        assert s.lufs_analysis.enabled is False
+        assert s.lufs_analysis.buffer_seconds == 1.0
+        assert s.lufs_analysis.eval_interval_frames == 50
+
     def test_channel_map_path_default(self) -> None:
         s = Settings()
         assert s.channel_map_path == Path("config/channels.yaml")
@@ -92,6 +99,17 @@ class TestEnvOverride:
         monkeypatch.setenv("MIXPILOT_RMS_DBFS__VOCAL", "-19.0")
         s = Settings()
         assert s.rms_dbfs.vocal == -19.0
+
+    def test_lufs_analysis_enabled_from_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MIXPILOT_LUFS_ANALYSIS__ENABLED", "true")
+        monkeypatch.setenv("MIXPILOT_LUFS_ANALYSIS__BUFFER_SECONDS", "2.5")
+        monkeypatch.setenv("MIXPILOT_LUFS_ANALYSIS__EVAL_INTERVAL_FRAMES", "30")
+        s = Settings()
+        assert s.lufs_analysis.enabled is True
+        assert s.lufs_analysis.buffer_seconds == 2.5
+        assert s.lufs_analysis.eval_interval_frames == 30
 
     def test_channel_map_path_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MIXPILOT_CHANNEL_MAP_PATH", "/etc/mixpilot/channels.yaml")
@@ -168,6 +186,22 @@ class TestValidation:
             M32Config(port=0)
         with pytest.raises(ValidationError):
             M32Config(port=70000)
+
+    def test_rejects_non_positive_buffer_seconds(self) -> None:
+        with pytest.raises(ValidationError):
+            LufsAnalysisConfig(buffer_seconds=0.0)
+        with pytest.raises(ValidationError):
+            LufsAnalysisConfig(buffer_seconds=-1.0)
+
+    def test_rejects_buffer_seconds_above_cap(self) -> None:
+        with pytest.raises(ValidationError):
+            LufsAnalysisConfig(buffer_seconds=20.0)
+
+    def test_rejects_non_positive_eval_interval(self) -> None:
+        with pytest.raises(ValidationError):
+            LufsAnalysisConfig(eval_interval_frames=0)
+        with pytest.raises(ValidationError):
+            LufsAnalysisConfig(eval_interval_frames=-1)
 
 
 class TestOperatingMode:
