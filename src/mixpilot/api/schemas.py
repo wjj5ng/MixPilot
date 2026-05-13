@@ -25,6 +25,16 @@ class HealthResponse(BaseModel):
     peak_analysis_enabled: bool
 
 
+class ControlResponse(BaseModel):
+    """제어 엔드포인트(`/control/*`) 공통 응답."""
+
+    status: str
+    """동작 결과 요약. 예: 'forced dry-run', 'no controller (audio disabled)'."""
+
+    effective_mode: str | None = None
+    """오버라이드 후의 effective_mode. controller가 없을 땐 None."""
+
+
 class RecommendationEvent(BaseModel):
     """`/recommendations` SSE 스트림의 단일 이벤트 페이로드.
 

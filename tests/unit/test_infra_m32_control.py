@@ -294,6 +294,56 @@ class TestApply:
         assert client.sent == [("/ch/12/mix/fader", 0.7)]
 
 
+class TestKillSwitch:
+    """ADR-0008 §3 킬 스위치 — force_dry_run / clear_override."""
+
+    def test_initial_effective_mode_matches_config(self) -> None:
+        cfg = M32Config(operating_mode=OperatingMode.AUTO)
+        ctl = M32OscController(cfg, osc_client=FakeOscClient())
+        assert ctl.effective_mode is OperatingMode.AUTO
+
+    def test_force_dry_run_overrides_effective_mode(self) -> None:
+        cfg = M32Config(operating_mode=OperatingMode.AUTO)
+        ctl = M32OscController(cfg, osc_client=FakeOscClient())
+        ctl.force_dry_run()
+        assert ctl.effective_mode is OperatingMode.DRY_RUN
+
+    def test_force_dry_run_blocks_subsequent_apply(self) -> None:
+        client = FakeOscClient()
+        ctl = M32OscController(
+            M32Config(
+                operating_mode=OperatingMode.AUTO,
+                auto_apply_confidence_threshold=0.0,
+            ),
+            osc_client=client,
+        )
+        ctl.force_dry_run()
+        asyncio.run(
+            ctl.apply(
+                _rec(
+                    RecommendationKind.GAIN_ADJUST,
+                    confidence=1.0,
+                    params={"fader": 0.5},
+                )
+            )
+        )
+        assert client.sent == []
+
+    def test_clear_override_restores_config_mode(self) -> None:
+        cfg = M32Config(operating_mode=OperatingMode.AUTO)
+        ctl = M32OscController(cfg, osc_client=FakeOscClient())
+        ctl.force_dry_run()
+        ctl.clear_override()
+        assert ctl.effective_mode is OperatingMode.AUTO
+
+    def test_clear_override_when_no_override_is_safe(self) -> None:
+        cfg = M32Config(operating_mode=OperatingMode.AUTO)
+        ctl = M32OscController(cfg, osc_client=FakeOscClient())
+        # override 없이 호출해도 예외 없이 종료.
+        ctl.clear_override()
+        assert ctl.effective_mode is OperatingMode.AUTO
+
+
 class TestAutoGuardIntegration:
     """ADR-0008 §3 — AutoGuard 연동."""
 

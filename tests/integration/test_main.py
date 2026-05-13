@@ -103,6 +103,45 @@ class TestOpenAPI:
         assert "/recommendations" in paths
         assert "get" in paths["/recommendations"]
 
+    def test_control_dry_run_route_is_documented(self, client: TestClient) -> None:
+        response = client.get("/openapi.json")
+        paths = response.json()["paths"]
+        assert "/control/dry-run" in paths
+        assert "post" in paths["/control/dry-run"]
+
+
+class TestKillSwitchEndpoint:
+    """ADR-0008 §3 — POST /control/dry-run."""
+
+    def test_without_controller_returns_helpful_status(
+        self, client: TestClient
+    ) -> None:
+        # audio.enabled=False 디폴트 → controller는 None.
+        response = client.post("/control/dry-run")
+        assert response.status_code == 200
+        body = response.json()
+        assert "no controller" in body["status"]
+        assert body["effective_mode"] is None
+
+    def test_with_controller_forces_dry_run(self) -> None:
+        # 가짜 controller를 app.state에 주입해 동작 확인.
+        from unittest.mock import MagicMock
+
+        from mixpilot.config import OperatingMode
+
+        app = create_app(settings=Settings())
+        fake_controller = MagicMock()
+        fake_controller.effective_mode = OperatingMode.DRY_RUN
+        app.state.controller = fake_controller
+        client = TestClient(app)
+
+        response = client.post("/control/dry-run")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "forced dry-run"
+        assert body["effective_mode"] == "dry-run"
+        fake_controller.force_dry_run.assert_called_once()
+
 
 class TestCors:
     def test_default_no_cors_header(self, client: TestClient) -> None:

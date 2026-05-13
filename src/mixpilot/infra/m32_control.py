@@ -70,6 +70,27 @@ class M32OscController:
         self._client = osc_client
         self._config = config
         self._auto_guard = auto_guard
+        # 킬 스위치 — config 변경 없이 운영 모드를 런타임에 강제 다운그레이드.
+        self._mode_override: OperatingMode | None = None
+
+    def force_dry_run(self) -> None:
+        """ADR-0008 §3 킬 스위치 — 모든 자동 액션 즉시 정지.
+
+        config는 그대로, 런타임 모드만 DRY_RUN으로 덮어쓴다. 한 번 호출되면
+        `clear_override()` 또는 프로세스 재시작 전까지 어떤 액션도 송신되지 않는다.
+        """
+        self._mode_override = OperatingMode.DRY_RUN
+        logger.warning("kill switch engaged — forcing dry-run")
+
+    def clear_override(self) -> None:
+        """런타임 모드 오버라이드 해제. config 모드로 복귀."""
+        self._mode_override = None
+        logger.info("mode override cleared — back to config mode")
+
+    @property
+    def effective_mode(self) -> OperatingMode:
+        """오버라이드가 있으면 그 값, 없으면 config의 mode."""
+        return self._mode_override or self._config.operating_mode
 
     async def apply(self, recommendation: Recommendation) -> None:
         """추천을 콘솔에 적용.
@@ -79,7 +100,7 @@ class M32OscController:
         if not self._should_apply(recommendation):
             logger.info(
                 "skipped policy (mode=%s, kind=%s, confidence=%.2f): %s",
-                self._config.operating_mode.value,
+                self.effective_mode.value,
                 recommendation.kind.value,
                 recommendation.confidence,
                 recommendation.reason,
@@ -102,8 +123,9 @@ class M32OscController:
         """ADR-0008 §1 Kind dispatch + §3 confidence 임계.
 
         INFO는 어떤 모드에서도 자동 적용 안 됨. confidence 임계는 모든 모드에 적용.
+        킬 스위치(override)가 활성이면 effective_mode가 DRY_RUN이 되어 자동 차단.
         """
-        mode = self._config.operating_mode
+        mode = self.effective_mode
         if rec.kind not in _AUTO_KINDS_BY_MODE[mode]:
             return False
         if rec.confidence < self._config.auto_apply_confidence_threshold:

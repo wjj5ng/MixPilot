@@ -27,7 +27,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-from mixpilot.api.schemas import HealthResponse, RecommendationEvent
+from mixpilot.api.schemas import ControlResponse, HealthResponse, RecommendationEvent
 from mixpilot.config import Settings, get_settings
 from mixpilot.domain import (
     Channel,
@@ -277,6 +277,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             try:
                 audio = SoundDeviceAudioSource(cfg.audio)
                 controller = M32OscController(cfg.m32)
+                app.state.controller = controller
                 channel_map = YamlChannelMetadata(cfg.channel_map_path)
                 sources = list(await channel_map.get_all_channels())
                 sources_by_id = {int(s.channel): s for s in sources}
@@ -356,6 +357,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if audio is not None:
                 with contextlib.suppress(Exception):
                     await audio.close()
+            app.state.controller = None
 
     app = FastAPI(
         title="MixPilot",
@@ -365,13 +367,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = cfg
     app.state.broker = broker
+    app.state.controller = None  # lifespan에서 audio.enabled=True면 채워진다.
 
     if cfg.dev_cors_enabled:
         app.add_middleware(
             CORSMiddleware,
             allow_origins=["http://localhost:5173"],
             allow_credentials=False,
-            allow_methods=["GET"],
+            allow_methods=["GET", "POST"],
             allow_headers=["*"],
         )
 
@@ -387,6 +390,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             lufs_analysis_enabled=cfg.lufs_analysis.enabled,
             feedback_analysis_enabled=cfg.feedback_analysis.enabled,
             peak_analysis_enabled=cfg.peak_analysis.enabled,
+        )
+
+    @app.post("/control/dry-run", response_model=ControlResponse)
+    async def force_dry_run(request: Request) -> ControlResponse:
+        """ADR-0008 §3 킬 스위치 — 모든 자동 액션 즉시 정지.
+
+        config 변경 없이 controller의 effective_mode를 DRY_RUN으로 강제 다운그레이드.
+        한 번 호출되면 프로세스 재시작 전까지 어떤 액션도 송신되지 않는다.
+
+        controller가 없는 경우(audio 비활성)에도 200으로 응답하며 상태 문자열로
+        알린다 — 멱등성 + 운영자 혼란 방지.
+        """
+        controller = request.app.state.controller
+        if controller is None:
+            return ControlResponse(
+                status="no controller (audio disabled)", effective_mode=None
+            )
+        controller.force_dry_run()
+        return ControlResponse(
+            status="forced dry-run", effective_mode=controller.effective_mode.value
         )
 
     @app.get(
