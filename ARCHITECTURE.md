@@ -127,5 +127,6 @@ M32 32채널을 입력 소스 카테고리(보컬·설교자·성가대·악기)
 | [ADR-0005](docs/adr/0005-control-output-x32-osc.md) | 제어 출력 — X32 OSC over UDP로 M32 직결 | Accepted |
 | [ADR-0006](docs/adr/0006-reaper-scope.md) | Reaper의 역할 범위 — 운영 경로 제외 | Accepted |
 | [ADR-0007](docs/adr/0007-frontend-stack.md) | 프론트엔드 — Svelte + Vite (vanilla SPA), monorepo | Accepted |
+| [ADR-0008](docs/adr/0008-auto-response-safety-policy.md) | 자동 응답 안전 정책 — Kind별 자동 적용 범위·안전장치 | Accepted |
 
 <!-- 새 결정 추가 시 행 추가 + `docs/adr/NNNN-<title>.md`에 본문 -->
