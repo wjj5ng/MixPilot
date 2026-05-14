@@ -112,6 +112,40 @@
     if (auditLogTimer !== null) clearInterval(auditLogTimer);
   });
 
+  // 감사 로그 필터.
+  type AuditOutcomeFilter = null | "applied" | "blocked";
+  let auditOutcomeFilter = $state<AuditOutcomeFilter>(null);
+  let auditQuery = $state("");
+
+  const visibleAuditEntries = $derived.by(() => {
+    let entries = auditEntries;
+    if (auditOutcomeFilter === "applied") {
+      entries = entries.filter((e) => e.outcome === "applied");
+    } else if (auditOutcomeFilter === "blocked") {
+      entries = entries.filter(
+        (e) => e.outcome === "blocked_policy" || e.outcome === "blocked_guard",
+      );
+    }
+    const query = auditQuery.trim().toLowerCase();
+    if (query) {
+      entries = entries.filter((e) => {
+        const haystack = [
+          String(e.channel),
+          `ch${String(e.channel).padStart(2, "0")}`,
+          e.label,
+          e.category,
+          e.kind,
+          e.reason,
+          e.rec_reason,
+        ]
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(query);
+      });
+    }
+    return entries;
+  });
+
   function outcomeLabel(outcome: string): string {
     return (
       {
@@ -261,7 +295,10 @@
 
   <section class="card">
     <h2>
-      감사 로그 ({auditEntries.length})
+      감사 로그 ({visibleAuditEntries.length}{visibleAuditEntries.length !==
+      auditEntries.length
+        ? ` / ${auditEntries.length}`
+        : ""})
       <span class="hint-inline">— JSONL 영구 이력, 10초마다 새로고침</span>
     </h2>
     {#if auditEnabled === false}
@@ -272,8 +309,36 @@
     {:else if auditEntries.length === 0}
       <p class="hint">아직 자동 액션 시도가 없습니다.</p>
     {:else}
+      <div class="audit-controls">
+        <div class="filter-group" role="group" aria-label="결과 필터">
+          <button
+            class="filter-btn"
+            class:active={auditOutcomeFilter === null}
+            onclick={() => (auditOutcomeFilter = null)}
+          >전체</button>
+          <button
+            class="filter-btn"
+            class:active={auditOutcomeFilter === "applied"}
+            onclick={() => (auditOutcomeFilter = "applied")}
+          >적용</button>
+          <button
+            class="filter-btn"
+            class:active={auditOutcomeFilter === "blocked"}
+            onclick={() => (auditOutcomeFilter = "blocked")}
+          >차단</button>
+        </div>
+        <input
+          class="audit-search"
+          type="search"
+          placeholder="ch / 라벨 / 사유 검색…"
+          bind:value={auditQuery}
+        />
+      </div>
+      {#if visibleAuditEntries.length === 0}
+        <p class="hint">검색·필터 일치 결과가 없습니다.</p>
+      {:else}
       <ul class="audit-list">
-        {#each auditEntries as entry, i (i)}
+        {#each visibleAuditEntries as entry, i (i)}
           <li class="audit-entry {outcomeClass(entry.outcome)}">
             <div class="audit-head">
               <span class="audit-time">{formatAuditTime(entry.timestamp)}</span>
@@ -293,6 +358,7 @@
           </li>
         {/each}
       </ul>
+      {/if}
     {/if}
   </section>
 
@@ -423,6 +489,32 @@
   }
 
   /* 감사 로그 카드 */
+  .audit-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .audit-search {
+    flex: 1;
+    min-width: 12rem;
+    background: #1a1d24;
+    color: #c8cdd6;
+    border: 1px solid #2a2f39;
+    border-radius: 0.25rem;
+    padding: 0.3rem 0.55rem;
+    font-size: 0.85rem;
+    font-family: inherit;
+  }
+  .audit-search:focus {
+    outline: none;
+    border-color: #2a4a73;
+    background: #232730;
+  }
+  .audit-search::placeholder {
+    color: #5a6270;
+  }
   .audit-list {
     list-style: none;
     padding: 0;
