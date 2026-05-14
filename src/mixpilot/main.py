@@ -20,6 +20,8 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -489,6 +491,23 @@ async def _processing_loop(
         raise
 
 
+def _resolve_audit_log_path(path: Path | None) -> Path | None:
+    """audit_log_path의 strftime 패턴을 *서버 가동 시점*으로 expand.
+
+    `./logs/audit-%Y%m%d.jsonl` → `./logs/audit-20260514.jsonl`. service별
+    자동 분리 — 운영자가 매 service마다 환경 변수를 손볼 필요 없음.
+
+    부모 디렉토리도 mkdir(parents=True, exist_ok=True) — 첫 service 시 폴더
+    없어도 자동 생성. None이면 None 반환(감사 로그 비활성).
+    """
+    if path is None:
+        return None
+    expanded = datetime.now().strftime(str(path))
+    resolved = Path(expanded)
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    return resolved
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """FastAPI 앱 팩토리.
 
@@ -499,7 +518,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     broker = RecommendationBroker()
     meter_broker = MeterBroker()
     # audit_log_path가 None이면 record()/read_recent()가 모두 no-op.
-    audit_logger = AuditLogger(path=cfg.audit_log_path)
+    # path에 strftime 패턴(%Y, %m 등)이 있으면 서버 가동 시점의 시각으로 expand
+    # → service별 자동 분리. 부모 디렉토리도 mkdir(parents=True).
+    audit_logger = AuditLogger(path=_resolve_audit_log_path(cfg.audit_log_path))
     # channel_map은 audio 비활성 상태에서도 endpoint가 읽을 수 있어야 하므로
     # 라이프스팬 외부에서 1회 생성.
     channel_map = YamlChannelMetadata(cfg.channel_map_path)
