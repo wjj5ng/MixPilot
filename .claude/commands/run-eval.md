@@ -37,6 +37,7 @@ uv run python -m mixpilot.scripts.run_eval evals/cases/*.yaml \
 | `lufs-baseline.yaml` | ✅ 통과 (4/4) |
 | `peak-baseline.yaml` | ✅ 통과 (10/10 assertion) |
 | `feedback-baseline.yaml` | ✅ 통과 (7/7 assertion) |
+| `dynamic-range-baseline.yaml` | ✅ 통과 (5/5) |
 
 미지원 케이스는 보고서에서 `unsupported function`로 표시. 새 DSP 지원 추가는
 `src/mixpilot/scripts/run_eval.py`의 `_DSP_DISPATCH`·`_SIGNAL_GENERATORS`에 항목 추가.

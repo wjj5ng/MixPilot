@@ -36,6 +36,7 @@ from typing import Any
 import numpy as np
 import yaml
 
+from mixpilot.dsp.dynamic_range import dynamic_range_db
 from mixpilot.dsp.feedback import FeedbackPeak, detect_peak_bins
 from mixpilot.dsp.lufs import lufs_integrated
 from mixpilot.dsp.peak import peak, true_peak
@@ -127,6 +128,9 @@ _DSP_DISPATCH: dict[str, Callable[[np.ndarray, Mapping[str, Any]], float]] = {
     ),
     "mixpilot.dsp.peak.peak": lambda samples, _input: peak(samples),
     "mixpilot.dsp.peak.true_peak": lambda samples, _input: true_peak(samples),
+    "mixpilot.dsp.dynamic_range.dynamic_range_db": lambda samples, _input: (
+        dynamic_range_db(samples)
+    ),
 }
 
 

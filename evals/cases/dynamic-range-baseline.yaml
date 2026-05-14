@@ -1,0 +1,63 @@
+# Dynamic Range (crest factor in dB) 기준 회귀.
+#
+# 알고리즘: DR_dB = 20 · log10(peak / RMS).
+# 사인파·DC·임펄스의 이론값은 결정적 — 이 값들이 깨지면 의도적 변경 시 ADR + 갱신.
+
+id: dynamic-range-baseline
+description: Dynamic Range (crest factor) DSP의 결정적 회귀 — 사인파·DC·임펄스·무음.
+function_under_test: mixpilot.dsp.dynamic_range.dynamic_range_db
+
+cases:
+  - id: dr-silence
+    input:
+      kind: silence
+      sample_rate: 48000
+      num_samples: 1024
+    expected:
+      value: 0.0
+      tolerance_abs: 1.0e-12
+
+  - id: dr-dc-0.5
+    input:
+      kind: dc
+      sample_rate: 48000
+      value: 0.5
+      duration_seconds: 0.1
+    expected:
+      # DC: peak=RMS → 0 dB.
+      value: 0.0
+      tolerance_abs: 1.0e-9
+
+  - id: dr-sine-1khz
+    input:
+      kind: sine
+      sample_rate: 48000
+      frequency_hz: 1000
+      amplitude: 0.5
+      duration_seconds: 0.1
+    expected:
+      # 사인파 이론 crest factor = 20·log10(√2) = 3.0103 dB.
+      value: 3.01029995663981
+      tolerance_abs: 0.01
+
+  - id: dr-impulse
+    input:
+      kind: impulse
+      length: 1024
+      position: 0
+      amplitude: 1.0
+    expected:
+      # 임펄스 (N=1024): peak=1, RMS=1/√1024. DR = 20·log10(√1024) = 30.103 dB.
+      value: 30.1029995663981
+      tolerance_abs: 0.01
+
+  - id: dr-white-noise-typical-range
+    input:
+      kind: white_noise
+      sample_rate: 48000
+      seed: 42
+      amplitude: 0.1
+      num_samples: 4800
+    expected:
+      # 가우시안 white noise는 보통 10~14 dB.
+      value_range: [9.0, 15.0]

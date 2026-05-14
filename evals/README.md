@@ -153,6 +153,7 @@ cases:
 | `lufs-baseline.yaml` | `lufs_integrated` | 4/4 (raises 포함) |
 | `peak-baseline.yaml` | `peak`+`true_peak` | 10/10 (4 cases × 다중 어설션) |
 | `feedback-baseline.yaml` | `detect_peak_bins` | 7/7 (5 cases × 다중 어설션) |
+| `dynamic-range-baseline.yaml` | `dynamic_range_db` | 5/5 |
 
 ## DSP 정확도 임계 기준
 
@@ -161,6 +162,7 @@ cases:
 - Peak: abs_tol 1e-9 (silence), rel_tol 1e-3 (sine).
 - True Peak: 사인파 0~10% 초과(resample 보간 transient 영향).
 - Feedback frequency: ± 50 Hz (1024-pt FFT의 bin resolution ≈ 47 Hz).
+- Dynamic Range: abs_tol 0.01 dB (사인파/임펄스 이론값과 거의 정확).
 
 임계를 *완화*하려면 ADR 작성 필요.
 
