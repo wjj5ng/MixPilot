@@ -7,6 +7,14 @@ MixPilot의 모든 주목할 만한 변경 사항을 기록합니다.
 
 ## [Unreleased]
 
+### Added (Unreleased, 가이드 #3)
+
+- **채널 시계열 카드 다채널 비교** — 단일 select 대신 채널 chip 토글로
+  최대 4채널 동시 오버레이. 시리즈별 색 매핑은 선택 순서 보존(팔레트
+  4색 — 녹·주황·청·자홍). 한도 초과 시 가장 먼저 선택한 채널이 자동 해제.
+  legend에 색·라벨 표시. Timeseries 컴포넌트 API가 단일 (`points`, `channel`,
+  `label`)에서 `series: Array<{channel,label,points,color}>`로 변경됨.
+
 ### Added (Unreleased, 가이드 #2)
 
 - **추천 스트림 새 알림 시각 강조** — 매 도착 시 6초 펄스 애니메이션
