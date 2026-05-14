@@ -172,8 +172,12 @@ MIXPILOT_AUDIT_LOG_PATH=./logs/audit-$(date +%Y%m%d).jsonl
 3. 다음 service 전에 환경 변수 조정 또는 프리셋 yaml 수정
 4. 변경이 크면 `evals/fixtures/`에 service 녹음 wav 추가 → 회귀 검증 자산화
 
-### 4-1. service wav 회귀 자산화 (선택)
+> **시계열 자산화** (선택): `MIXPILOT_METRICS_SINK__ENABLED=true` +
+> `MIXPILOT_METRICS_SINK__OUTPUT_PATH=./logs/metrics-%Y%m%d-%H%M%S.jsonl`로
+> 가동하면 채널별 RMS·Peak·LRA·Phase가 1초마다 JSONL로 누적. service 후
+> `jq` / pandas로 트렌드 분석 가능 (ADR-0010).
 
+### 4-1. service wav 회귀 자산화 (선택)
 Reaper로 service를 다채널 녹음했다면:
 
 ```bash

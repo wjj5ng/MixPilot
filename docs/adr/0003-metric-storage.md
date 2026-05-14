@@ -1,6 +1,6 @@
 # ADR-0003: 메트릭 저장소 — 현 단계는 JSONL 감사로 충분, 시계열 저장 보류
 
-- 상태: Accepted
+- 상태: Superseded by [ADR-0010](0010-metric-timeseries-persistence.md) (2026-05-14) — 시계열 UI·운영자 가이드 도입으로 영속화 필요성 확정
 - 날짜: 2026-05-14
 - 결정자: 차운영(sre), 김설계(architect), 윤분석(data-analyst)
 - 관련: ADR-0008(자동 응답 안전 정책)

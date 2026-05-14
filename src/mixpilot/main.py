@@ -71,6 +71,7 @@ from mixpilot.infra.audio_capture import SoundDeviceAudioSource
 from mixpilot.infra.audit import AuditLogger
 from mixpilot.infra.channel_map import YamlChannelMetadata
 from mixpilot.infra.m32_control import M32OscController
+from mixpilot.infra.metrics_sink import JsonlMetricsSink
 from mixpilot.infra.synthetic_audio import SyntheticAudioSource
 from mixpilot.infra.wav_replay import WavReplayAudioSource
 from mixpilot.rules import (
@@ -325,6 +326,7 @@ async def _processing_loop(
     phase_warn_threshold: float = -0.3,
     meter_broker: MeterBroker | None = None,
     meter_publish_interval_frames: int = 5,
+    metrics_sink: JsonlMetricsSink | None = None,
 ) -> None:
     """오디오 프레임 → 룰 평가 → 제어 송신 + 브로커 푸시.
 
@@ -473,14 +475,19 @@ async def _processing_loop(
 
             if meter_enabled and frame_count % meter_publish_interval_frames == 0:
                 assert meter_broker is not None
-                meter_broker.publish(
-                    _compute_meter_payload(
-                        channels,
-                        signal.capture_seq,
-                        lra_by_channel=latest_lra if tg["lra"] else None,
-                        phase_by_pair=phase_by_pair if phase_by_pair else None,
-                    )
+                payload = _compute_meter_payload(
+                    channels,
+                    signal.capture_seq,
+                    lra_by_channel=latest_lra if tg["lra"] else None,
+                    phase_by_pair=phase_by_pair if phase_by_pair else None,
                 )
+                meter_broker.publish(payload)
+                # 메트릭 영속화 — sink가 자체 throttling.
+                if metrics_sink is not None:
+                    metrics_sink.maybe_write(
+                        payload["channels"],
+                        capture_seq=signal.capture_seq,
+                    )
 
             for rec in recommendations:
                 await controller.apply(rec)
@@ -523,6 +530,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # path에 strftime 패턴(%Y, %m 등)이 있으면 서버 가동 시점의 시각으로 expand
     # → service별 자동 분리. 부모 디렉토리도 mkdir(parents=True).
     audit_logger = AuditLogger(path=_resolve_audit_log_path(cfg.audit_log_path))
+    # 메트릭 시계열 영속화 — ADR-0010. enabled=False면 path=None으로 no-op.
+    metrics_sink_path = (
+        _resolve_audit_log_path(cfg.metrics_sink.output_path)
+        if cfg.metrics_sink.enabled
+        else None
+    )
+    metrics_sink = JsonlMetricsSink(
+        path=metrics_sink_path,
+        interval_seconds=cfg.metrics_sink.interval_seconds,
+    )
     # channel_map은 audio 비활성 상태에서도 endpoint가 읽을 수 있어야 하므로
     # 라이프스팬 외부에서 1회 생성.
     channel_map = YamlChannelMetadata(cfg.channel_map_path)
@@ -647,6 +664,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         meter_publish_interval_frames=(
                             cfg.meter_stream.publish_interval_frames
                         ),
+                        metrics_sink=metrics_sink,
                     )
                 )
                 logger.info(
@@ -724,6 +742,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             lra_analysis_enabled=cfg.lra_analysis.enabled,
             phase_analysis_enabled=cfg.phase_analysis.enabled,
             meter_stream_enabled=cfg.meter_stream.enabled,
+            metrics_sink_enabled=cfg.metrics_sink.enabled,
         )
 
     @app.get("/control/recent-actions", response_model=RecentActionsResponse)

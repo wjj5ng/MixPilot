@@ -164,6 +164,25 @@ class PhaseAnalysisConfig(BaseModel):
     """이 이하 correlation이면 INFO 발화. 음수 (- 1.0이 완전 역상)."""
 
 
+class MetricsSinkConfig(BaseModel):
+    """시계열 메트릭 영속화 — service 단위 JSONL append (ADR-0010).
+
+    UI의 채널 시계열은 메모리 2분만 보관 → service 끝나면 증발. 본 sink는
+    채널별 RMS·Peak·LRA·Phase를 정해진 cadence로 JSONL에 누적, 사후 회고·
+    트렌드 분석에 사용.
+    """
+
+    enabled: bool = False
+    """메트릭 시계열 영속화 활성. 디폴트 off (운영자가 명시적으로 켬)."""
+
+    output_path: Path | None = None
+    """JSONL 출력 경로. strftime 패턴 지원 — `./logs/metrics-%Y%m%d.jsonl`.
+    None이거나 enabled=False면 sink 비활성. audit_log_path와 별도 운영."""
+
+    interval_seconds: float = Field(default=1.0, gt=0.0, le=60.0)
+    """기록 빈도. 미터 publish(~9 Hz)와 별도. 1.0초면 service 1시간 = 3600줄."""
+
+
 class MeterStreamConfig(BaseModel):
     """라이브 미터 스트림(`/meters` SSE) 설정.
 
@@ -288,6 +307,7 @@ class Settings(BaseSettings):
     lra_analysis: LraAnalysisConfig = Field(default_factory=LraAnalysisConfig)
     phase_analysis: PhaseAnalysisConfig = Field(default_factory=PhaseAnalysisConfig)
     meter_stream: MeterStreamConfig = Field(default_factory=MeterStreamConfig)
+    metrics_sink: MetricsSinkConfig = Field(default_factory=MetricsSinkConfig)
 
     dev_cors_enabled: bool = False
     """프론트엔드 dev 서버(http://localhost:5173)에서의 CORS 요청을 허용한다.

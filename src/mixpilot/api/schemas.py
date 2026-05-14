@@ -27,6 +27,7 @@ class HealthResponse(BaseModel):
     lra_analysis_enabled: bool
     phase_analysis_enabled: bool
     meter_stream_enabled: bool
+    metrics_sink_enabled: bool
 
 
 class ControlResponse(BaseModel):
