@@ -85,6 +85,7 @@ class TestHealth:
             "peak_analysis_enabled",
             "dynamic_range_analysis_enabled",
             "lra_analysis_enabled",
+            "phase_analysis_enabled",
             "meter_stream_enabled",
         }
 
@@ -223,6 +224,7 @@ class TestChannelMapEndpoint:
             "channel": 1,
             "category": "preacher",
             "label": "설교자 메인",
+            "stereo_pair_with": None,
         }
         # YAML이 갱신됐는지 — 새 GET으로.
         with TestClient(app) as c2:
@@ -279,6 +281,7 @@ class TestRulesEndpoint:
             "feedback",
             "dynamic_range",
             "lra",
+            "phase",
         }
 
     def test_default_state_reflects_config(self, client: TestClient) -> None:

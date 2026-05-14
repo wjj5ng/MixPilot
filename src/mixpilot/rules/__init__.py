@@ -17,6 +17,7 @@ from .lra import (
 )
 from .lufs import evaluate_all_channels_lufs, evaluate_channel_lufs
 from .peak import evaluate_all_channels_peak, evaluate_channel_peak
+from .phase import evaluate_all_phase_pairs, evaluate_pair_phase
 
 __all__ = [
     "evaluate_all_channels",
@@ -25,6 +26,7 @@ __all__ = [
     "evaluate_all_channels_lufs",
     "evaluate_all_channels_peak",
     "evaluate_all_feedback",
+    "evaluate_all_phase_pairs",
     "evaluate_channel_dynamic_range",
     "evaluate_channel_loudness",
     "evaluate_channel_lra",
@@ -32,4 +34,5 @@ __all__ = [
     "evaluate_channel_peak",
     "evaluate_feedback",
     "evaluate_lra_value",
+    "evaluate_pair_phase",
 ]

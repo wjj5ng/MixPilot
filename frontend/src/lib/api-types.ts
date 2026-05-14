@@ -314,6 +314,8 @@ export interface components {
             category: string;
             /** Label */
             label: string;
+            /** Stereo Pair With */
+            stereo_pair_with?: number | null;
         };
         /**
          * ChannelMapResponse
@@ -325,7 +327,7 @@ export interface components {
         };
         /**
          * ChannelMapUpdateRequest
-         * @description `PUT /channels/{id}` 요청 body — 카테고리·라벨 갱신.
+         * @description `PUT /channels/{id}` 요청 body — 카테고리·라벨·stereo 페어 갱신.
          */
         ChannelMapUpdateRequest: {
             /** Category */
@@ -335,6 +337,8 @@ export interface components {
              * @default
              */
             label: string;
+            /** Stereo Pair With */
+            stereo_pair_with?: number | null;
         };
         /**
          * ChannelMeter
@@ -358,6 +362,10 @@ export interface components {
              * @default []
              */
             octave_bands_dbfs: number[];
+            /** Stereo Pair With */
+            stereo_pair_with?: number | null;
+            /** Phase With Pair */
+            phase_with_pair?: number | null;
         };
         /**
          * ControlResponse
@@ -399,6 +407,8 @@ export interface components {
             dynamic_range_analysis_enabled: boolean;
             /** Lra Analysis Enabled */
             lra_analysis_enabled: boolean;
+            /** Phase Analysis Enabled */
+            phase_analysis_enabled: boolean;
             /** Meter Stream Enabled */
             meter_stream_enabled: boolean;
         };

@@ -25,6 +25,18 @@ import yaml
 from mixpilot.domain import ChannelId, Source, SourceCategory
 
 
+def _serialize_entry(s: Source) -> dict[str, Any]:
+    """Source → YAML entry dict. stereo_pair_with는 None이면 생략."""
+    entry: dict[str, Any] = {
+        "id": int(s.channel),
+        "category": s.category.value,
+        "label": s.label,
+    }
+    if s.stereo_pair_with is not None:
+        entry["stereo_pair_with"] = int(s.stereo_pair_with)
+    return entry
+
+
 class YamlChannelMetadata:
     """`ConsoleMetadata` 포트의 YAML 구현."""
 
@@ -54,6 +66,7 @@ class YamlChannelMetadata:
             raise ValueError("channels.yaml 'channels' must be a list")
 
         result: dict[int, Source] = {}
+        explicit_pairs: dict[int, int] = {}
         for item in raw_channels:
             if not isinstance(item, dict):
                 continue
@@ -66,11 +79,30 @@ class YamlChannelMetadata:
             except ValueError:
                 category = SourceCategory.UNKNOWN
             label = str(item.get("label", ""))
+            pair_with = item.get("stereo_pair_with")
+            if isinstance(pair_with, int) and pair_with != ch_id:
+                explicit_pairs[ch_id] = pair_with
             result[ch_id] = Source(
                 channel=ChannelId(ch_id),
                 category=category,
                 label=label,
+                stereo_pair_with=None,
             )
+
+        # 자동 reverse — ch3에 pair_with=4만 적어도 ch4의 pair도 ch3로 채움.
+        # 양쪽 명시 + 서로 다른 상대를 가리키면 첫 번째 우선(silent conflict 정책).
+        pair_table = dict(explicit_pairs)
+        for ch_id, partner in explicit_pairs.items():
+            pair_table.setdefault(partner, ch_id)
+        for ch_id, partner in pair_table.items():
+            if ch_id in result:
+                src = result[ch_id]
+                result[ch_id] = Source(
+                    channel=src.channel,
+                    category=src.category,
+                    label=src.label,
+                    stereo_pair_with=partner,
+                )
         return result
 
     async def get_channel_label(self, channel: ChannelId) -> str:
@@ -81,12 +113,21 @@ class YamlChannelMetadata:
         return sorted(self._load().values(), key=lambda s: int(s.channel))
 
     def update_channel(
-        self, ch_id: int, *, category: SourceCategory, label: str
+        self,
+        ch_id: int,
+        *,
+        category: SourceCategory,
+        label: str,
+        stereo_pair_with: int | None = None,
     ) -> Source:
         """단일 채널 entry를 갱신 — 메모리 캐시 + YAML 파일 모두 즉시 반영.
 
         새 채널 ID도 지원 — 매핑에 없던 ID면 추가. 운영자가 service 도중
         매핑을 빠르게 조정할 수 있도록.
+
+        Stereo pair는 양방향으로 동기화 — ch3→ch4 갱신 시 ch4의 pair도 ch3로
+        자동 갱신, 기존 ch4의 pair가 ch5였다면 그 관계는 끊어진다(ch5의 pair는
+        None으로 클리어).
 
         ⚠️ 라이브 처리 루프는 시작 시 스냅샷한 `sources_by_id`를 사용하므로
         프로세스 재시작 전까지는 본 변경이 *반영되지 않음*. 호출자는 UI에서
@@ -96,7 +137,48 @@ class YamlChannelMetadata:
             갱신된 Source 객체.
         """
         loaded = self._load()
-        new_source = Source(channel=ChannelId(ch_id), category=category, label=label)
+        # 기존 pair 관계 정리 — 본 채널이 이전에 pair 갖고 있었으면 상대 채널의
+        # pair도 None으로 클리어 (양쪽 일관성).
+        old = loaded.get(ch_id)
+        if old is not None and old.stereo_pair_with is not None:
+            partner_id = old.stereo_pair_with
+            if partner_id in loaded:
+                partner = loaded[partner_id]
+                loaded[partner_id] = Source(
+                    channel=partner.channel,
+                    category=partner.category,
+                    label=partner.label,
+                    stereo_pair_with=None,
+                )
+        # 새 pair partner의 기존 관계도 정리.
+        if stereo_pair_with is not None and stereo_pair_with in loaded:
+            partner = loaded[stereo_pair_with]
+            if (
+                partner.stereo_pair_with is not None
+                and partner.stereo_pair_with != ch_id
+            ):
+                other = partner.stereo_pair_with
+                if other in loaded:
+                    other_src = loaded[other]
+                    loaded[other] = Source(
+                        channel=other_src.channel,
+                        category=other_src.category,
+                        label=other_src.label,
+                        stereo_pair_with=None,
+                    )
+            # partner의 pair를 본 채널로 설정.
+            loaded[stereo_pair_with] = Source(
+                channel=partner.channel,
+                category=partner.category,
+                label=partner.label,
+                stereo_pair_with=ch_id,
+            )
+        new_source = Source(
+            channel=ChannelId(ch_id),
+            category=category,
+            label=label,
+            stereo_pair_with=stereo_pair_with,
+        )
         loaded[ch_id] = new_source
         self._write_yaml(loaded)
         return new_source
@@ -118,11 +200,7 @@ class YamlChannelMetadata:
         )
         entries_data = {
             "channels": [
-                {
-                    "id": int(s.channel),
-                    "category": s.category.value,
-                    "label": s.label,
-                }
+                _serialize_entry(s)
                 for s in sorted(sources.values(), key=lambda x: int(x.channel))
             ]
         }

@@ -96,11 +96,16 @@ export async function updateChannel(
   channel: number,
   category: string,
   label: string,
+  stereoPairWith: number | null = null,
 ): Promise<ChannelMapEntry> {
   const response = await fetch(`${API_BASE_URL}/channels/${channel}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ category, label }),
+    body: JSON.stringify({
+      category,
+      label,
+      stereo_pair_with: stereoPairWith,
+    }),
   });
   if (!response.ok) {
     const detail = await response.text();
