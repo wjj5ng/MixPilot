@@ -141,11 +141,15 @@ export interface components {
         };
         /**
          * ChannelMeter
-         * @description 단일 채널의 미터 스냅샷 — RMS·peak를 dBFS로.
+         * @description 단일 채널의 미터 스냅샷 — 라벨·카테고리 + RMS·peak를 dBFS로.
          */
         ChannelMeter: {
             /** Channel */
             channel: number;
+            /** Label */
+            label: string;
+            /** Category */
+            category: string;
             /** Rms Dbfs */
             rms_dbfs: number;
             /** Peak Dbfs */

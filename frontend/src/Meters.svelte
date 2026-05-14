@@ -31,7 +31,12 @@
     <div class="meter-grid">
       {#each channels as ch (ch.channel)}
         <div class="meter">
-          <div class="meter-label">ch{String(ch.channel).padStart(2, "0")}</div>
+          <div class="meter-ident">
+            <span class="meter-channel">ch{String(ch.channel).padStart(2, "0")}</span>
+            <span class="meter-source">
+              {#if ch.label}{ch.label}{:else}<em>{ch.category}</em>{/if}
+            </span>
+          </div>
           <div class="meter-bar">
             <div
               class="meter-fill meter-rms"
@@ -76,14 +81,32 @@
   }
   .meter {
     display: grid;
-    grid-template-columns: 3rem 1fr auto;
+    grid-template-columns: 11rem 1fr auto;
     align-items: center;
     gap: 0.5rem;
     font-size: 0.8rem;
   }
-  .meter-label {
+  .meter-ident {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.1;
+    min-width: 0;
+  }
+  .meter-channel {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     color: #8b95a3;
+    font-size: 0.75rem;
+  }
+  .meter-source {
+    color: #c8cdd6;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .meter-source em {
+    color: #5a6270;
+    font-style: italic;
+    font-size: 0.85em;
   }
   .meter-bar {
     position: relative;
@@ -125,7 +148,7 @@
   .scale {
     display: flex;
     justify-content: space-between;
-    margin-left: 3.5rem;
+    margin-left: 11.5rem;
     margin-top: 0.4rem;
     font-size: 0.65rem;
     color: #5a6270;

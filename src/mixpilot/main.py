@@ -144,26 +144,36 @@ class MeterBroker:
 
 
 def _compute_meter_payload(
-    samples_2d: np.ndarray, capture_seq: int
+    channels: list[Channel], capture_seq: int
 ) -> dict[str, Any]:
-    """채널별 RMS·peak dBFS를 SSE 페이로드로 직렬화.
+    """채널별 RMS·peak dBFS + 라벨/카테고리를 SSE 페이로드로 직렬화.
+
+    채널 순서·1-based ID는 입력의 `channel.source.channel`을 그대로 사용.
 
     Args:
-        samples_2d: shape (frames, channels) 2D ndarray.
+        channels: `_split_signal_to_channels` 결과 — source 정보 포함.
         capture_seq: 원천 Signal의 단조 시퀀스.
     """
-    rms_lin = rms_channels(samples_2d)
-    peak_lin = peak_channels(samples_2d)
-    channels = []
-    for ch_idx in range(samples_2d.shape[1]):
-        channels.append(
+    if not channels:
+        return {"capture_seq": int(capture_seq), "channels": []}
+
+    # 2D ndarray로 모아서 벡터화 계산 — 채널 수 많을수록 이득.
+    stacked = np.stack([ch.samples for ch in channels], axis=1)
+    rms_lin = rms_channels(stacked)
+    peak_lin = peak_channels(stacked)
+
+    payload_channels: list[dict[str, Any]] = []
+    for idx, ch in enumerate(channels):
+        payload_channels.append(
             {
-                "channel": ch_idx + 1,
-                "rms_dbfs": to_dbfs(float(rms_lin[ch_idx])),
-                "peak_dbfs": to_dbfs(float(peak_lin[ch_idx])),
+                "channel": int(ch.source.channel),
+                "label": ch.source.label,
+                "category": ch.source.category.value,
+                "rms_dbfs": to_dbfs(float(rms_lin[idx])),
+                "peak_dbfs": to_dbfs(float(peak_lin[idx])),
             }
         )
-    return {"capture_seq": int(capture_seq), "channels": channels}
+    return {"capture_seq": int(capture_seq), "channels": payload_channels}
 
 
 def _split_signal_to_channels(
@@ -350,11 +360,8 @@ async def _processing_loop(
                 and frame_count % meter_publish_interval_frames == 0
             ):
                 assert meter_broker is not None
-                samples_2d = signal.samples
-                if samples_2d.ndim == 1:
-                    samples_2d = samples_2d.reshape(-1, 1)
                 meter_broker.publish(
-                    _compute_meter_payload(samples_2d, signal.capture_seq)
+                    _compute_meter_payload(channels, signal.capture_seq)
                 )
 
             for rec in recommendations:
