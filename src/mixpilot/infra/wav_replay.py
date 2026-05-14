@@ -58,9 +58,7 @@ class WavReplayAudioSource:
 
     def __init__(self, config: AudioConfig) -> None:
         if config.replay_path is None:
-            raise ValueError(
-                "AudioConfig.replay_path must be set when source=wav"
-            )
+            raise ValueError("AudioConfig.replay_path must be set when source=wav")
         if not config.replay_path.exists():
             raise FileNotFoundError(f"WAV not found: {config.replay_path}")
 
@@ -118,10 +116,10 @@ class WavReplayAudioSource:
                 # 다음 block 추출 — 경계를 넘으면 wrap 또는 종료.
                 end = self._cursor + block
                 if end <= total_frames:
-                    chunk = self._data[self._cursor:end]
+                    chunk = self._data[self._cursor : end]
                     self._cursor = end
                 else:
-                    head = self._data[self._cursor:total_frames]
+                    head = self._data[self._cursor : total_frames]
                     if not loop:
                         # 마지막 부분 패딩 후 송출 후 종료.
                         if head.size > 0:

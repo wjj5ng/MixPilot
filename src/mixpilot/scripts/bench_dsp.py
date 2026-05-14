@@ -101,8 +101,7 @@ def main(argv: list[str] | None = None) -> int:
     repeat = int(args.repeat)
 
     print(
-        f"DSP benchmark — sample_rate={sample_rate} Hz, repeat={repeat}, "
-        f"sizes={sizes}"
+        f"DSP benchmark — sample_rate={sample_rate} Hz, repeat={repeat}, sizes={sizes}"
     )
     print(
         f"라이브 처리 luxury budget(block_size / sr): "
@@ -111,8 +110,8 @@ def main(argv: list[str] | None = None) -> int:
     print()
 
     # 헤더.
-    header = "function".ljust(22) + "  " + "  ".join(
-        f"{n:>6} (med / p99 ms)" for n in sizes
+    header = (
+        "function".ljust(22) + "  " + "  ".join(f"{n:>6} (med / p99 ms)" for n in sizes)
     )
     print(header)
     print("-" * len(header))

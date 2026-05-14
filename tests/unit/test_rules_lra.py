@@ -39,9 +39,7 @@ def _sine(duration_s: float, *, amp: float = 0.5) -> np.ndarray:
 def _two_level(
     loud_s: float, soft_s: float, loud_amp: float, soft_amp: float
 ) -> np.ndarray:
-    return np.concatenate(
-        [_sine(loud_s, amp=loud_amp), _sine(soft_s, amp=soft_amp)]
-    )
+    return np.concatenate([_sine(loud_s, amp=loud_amp), _sine(soft_s, amp=soft_amp)])
 
 
 class TestEvaluateChannelLra:
@@ -51,9 +49,7 @@ class TestEvaluateChannelLra:
         assert rec is None
 
     def test_silence_returns_none(self) -> None:
-        rec = evaluate_channel_lra(
-            _channel(np.zeros(int(10 * _SR), dtype=np.float64))
-        )
+        rec = evaluate_channel_lra(_channel(np.zeros(int(10 * _SR), dtype=np.float64)))
         assert rec is None
 
     def test_two_level_high_dynamic_emits_high_warning(self) -> None:

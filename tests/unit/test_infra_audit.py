@@ -188,9 +188,7 @@ class TestReadRecent:
         timestamps = iter([float(i) for i in range(10)])
         logger = AuditLogger(path=p, clock=lambda: next(timestamps))
         for _ in range(10):
-            logger.record(
-                _rec(), outcome=AuditOutcome.APPLIED, effective_mode="auto"
-            )
+            logger.record(_rec(), outcome=AuditOutcome.APPLIED, effective_mode="auto")
         records = logger.read_recent(limit=3)
         assert len(records) == 3
         # 마지막 3개를 최신 순으로: 9, 8, 7.

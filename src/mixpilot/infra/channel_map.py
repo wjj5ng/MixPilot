@@ -96,9 +96,7 @@ class YamlChannelMetadata:
             갱신된 Source 객체.
         """
         loaded = self._load()
-        new_source = Source(
-            channel=ChannelId(ch_id), category=category, label=label
-        )
+        new_source = Source(channel=ChannelId(ch_id), category=category, label=label)
         loaded[ch_id] = new_source
         self._write_yaml(loaded)
         return new_source

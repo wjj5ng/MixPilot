@@ -188,9 +188,7 @@ def _compute_meter_payload(
                 "category": ch.source.category.value,
                 "rms_dbfs": to_dbfs(float(rms_lin[idx])),
                 "peak_dbfs": to_dbfs(float(peak_lin[idx])),
-                "lra_lu": (
-                    lra_by_channel.get(ch_id) if lra_by_channel else None
-                ),
+                "lra_lu": (lra_by_channel.get(ch_id) if lra_by_channel else None),
                 "octave_bands_dbfs": octave_band_levels_dbfs(
                     ch.samples, ch.format.sample_rate
                 ),
@@ -424,10 +422,7 @@ async def _processing_loop(
                         if rec is not None:
                             recommendations.append(rec)
 
-            if (
-                meter_enabled
-                and frame_count % meter_publish_interval_frames == 0
-            ):
+            if meter_enabled and frame_count % meter_publish_interval_frames == 0:
                 assert meter_broker is not None
                 meter_broker.publish(
                     _compute_meter_payload(
@@ -467,10 +462,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         task: asyncio.Task[None] | None = None
         audio: (
-            SoundDeviceAudioSource
-            | SyntheticAudioSource
-            | WavReplayAudioSource
-            | None
+            SoundDeviceAudioSource | SyntheticAudioSource | WavReplayAudioSource | None
         ) = None
 
         if cfg.audio.enabled:
@@ -729,9 +721,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 status_code=400, detail=f"invalid category: {body.category}"
             ) from e
         cm: YamlChannelMetadata = request.app.state.channel_map
-        updated = cm.update_channel(
-            channel_id, category=category, label=body.label
-        )
+        updated = cm.update_channel(channel_id, category=category, label=body.label)
         return ChannelMapEntry(
             channel=int(updated.channel),
             category=updated.category.value,
@@ -739,9 +729,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     @app.get("/control/audit-log/recent", response_model=AuditLogResponse)
-    async def audit_log_recent(
-        request: Request, limit: int = 50
-    ) -> AuditLogResponse:
+    async def audit_log_recent(request: Request, limit: int = 50) -> AuditLogResponse:
         """ADR-0008 §3 감사 JSONL의 최근 레코드 — 영구 이력 조회.
 
         `recent-actions`는 메모리 60초 윈도우(applied만), 이 엔드포인트는

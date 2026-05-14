@@ -184,7 +184,11 @@ class TestChannelMapEndpoint:
     def test_returns_known_categories(self, client: TestClient) -> None:
         body = client.get("/channels").json()
         valid_categories = {
-            "vocal", "preacher", "choir", "instrument", "unknown",
+            "vocal",
+            "preacher",
+            "choir",
+            "instrument",
+            "unknown",
         }
         for entry in body["entries"]:
             assert entry["category"] in valid_categories
