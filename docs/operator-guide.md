@@ -177,6 +177,23 @@ MIXPILOT_AUDIT_LOG_PATH=./logs/audit-$(date +%Y%m%d).jsonl
 > 가동하면 채널별 RMS·Peak·LRA·Phase가 1초마다 JSONL로 누적. service 후
 > `jq` / pandas로 트렌드 분석 가능 (ADR-0010).
 
+### 4-1. service wav 회귀 자산화 (선택)
+Reaper로 service를 다채널 녹음했다면:
+
+```bash
+# 1. wav를 evals/fixtures/에 복사 (gitignore — commit 안 됨)
+cp ~/Music/Reaper/service-20260514.wav evals/fixtures/
+
+# 2. 회귀 케이스 yaml 작성 (evals/service-cases/README.md 참조)
+# 3. 실행
+uv run python -m mixpilot.scripts.run_service_replay \
+    evals/service-cases/service-20260514.yaml
+```
+
+처음 실행 결과를 expected에 박으면 "오늘 본 결과가 미래에도 그대로"가
+회귀 정의가 됩니다. 다음 service 전 코드 변경 후 같은 케이스를 돌려 의도치
+않은 변화 즉시 감지.
+
 ---
 
 ## 7. 비상 시
