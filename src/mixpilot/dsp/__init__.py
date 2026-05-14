@@ -25,6 +25,7 @@ from .peak import (
     true_peak,
     true_peak_channels,
 )
+from .phase import UNDEFINED_PHASE, phase_correlation, phase_correlation_pair
 from .rms import SILENCE_FLOOR_DBFS, rms, rms_channels, to_dbfs
 from .spectrum import OCTAVE_CENTERS_HZ, octave_band_levels_dbfs
 
@@ -37,6 +38,7 @@ __all__ = [
     "OCTAVE_CENTERS_HZ",
     "SILENCE_FLOOR_DBFS",
     "SILENCE_FLOOR_LUFS",
+    "UNDEFINED_PHASE",
     "FeedbackPeak",
     "detect_peak_bins",
     "dynamic_range_channels",
@@ -47,6 +49,8 @@ __all__ = [
     "octave_band_levels_dbfs",
     "peak",
     "peak_channels",
+    "phase_correlation",
+    "phase_correlation_pair",
     "rms",
     "rms_channels",
     "to_dbfs",
