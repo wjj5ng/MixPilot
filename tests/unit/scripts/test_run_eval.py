@@ -60,9 +60,7 @@ class TestToleranceCheck:
         assert not run_eval._within_tolerance(0.301, 0.3, abs_tol=1e-4, rel_tol=None)
 
     def test_rel_tol_passes(self) -> None:
-        assert run_eval._within_tolerance(
-            1000.5, 1000.0, abs_tol=None, rel_tol=1e-3
-        )
+        assert run_eval._within_tolerance(1000.5, 1000.0, abs_tol=None, rel_tol=1e-3)
 
     def test_rel_tol_fails(self) -> None:
         assert not run_eval._within_tolerance(
@@ -71,9 +69,7 @@ class TestToleranceCheck:
 
     def test_either_tol_passes(self) -> None:
         # abs는 실패하지만 rel은 통과 → 통과 처리.
-        assert run_eval._within_tolerance(
-            1000.5, 1000.0, abs_tol=0.1, rel_tol=1e-2
-        )
+        assert run_eval._within_tolerance(1000.5, 1000.0, abs_tol=0.1, rel_tol=1e-2)
 
     def test_default_when_neither_specified(self) -> None:
         # 둘 다 None → 기본 abs_tol=1e-9.

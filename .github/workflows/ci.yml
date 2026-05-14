@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# 동일 ref에 새 푸시가 오면 이전 실행 자동 취소.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (lint·test·eval)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Pytest
+        run: uv run pytest --cov=src/mixpilot --cov-report=term-missing
+
+      - name: DSP eval baselines
+        run: |
+          uv run python -m mixpilot.scripts.run_eval \
+            evals/cases/rms-baseline.yaml \
+            evals/cases/lufs-baseline.yaml \
+            evals/cases/peak-baseline.yaml \
+            evals/cases/feedback-baseline.yaml
+
+  frontend:
+    name: Frontend (typecheck·build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Type check
+        run: npm run check
+
+      - name: Build
+        run: npm run build
+
+  openapi-drift:
+    name: OpenAPI schema drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Sync backend
+        run: uv sync --frozen
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        run: npm ci
+        working-directory: frontend
+
+      - name: Regenerate API types (offline)
+        run: npm run gen:api:offline
+        working-directory: frontend
+
+      - name: Fail if api-types.ts drifted
+        run: |
+          if ! git diff --exit-code -- frontend/src/lib/api-types.ts; then
+            echo "::error::frontend/src/lib/api-types.ts is out of sync."
+            echo "Run 'npm --prefix frontend run gen:api:offline' and commit the result."
+            exit 1
+          fi

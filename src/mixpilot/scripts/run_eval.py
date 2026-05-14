@@ -187,9 +187,7 @@ def _evaluate_expected(
         delta_value = float(expected["delta_value"])
         abs_tol = float(expected.get("tolerance_abs", 0.0))
         ref_measured = prior_measured.get(ref_id)
-        summary = (
-            f"delta_from={ref_id} delta={delta_value:.6g} abs_tol={abs_tol:.2g}"
-        )
+        summary = f"delta_from={ref_id} delta={delta_value:.6g} abs_tol={abs_tol:.2g}"
         if ref_measured is None:
             return (
                 False,
@@ -202,8 +200,12 @@ def _evaluate_expected(
             return False, summary, f"delta={actual_delta:.6g} differs from expected"
         return True, summary, ""
 
-    return False, "<unknown expected schema>", (
-        "expected has no recognized field (value | value_range | delta_from | raises)"
+    return (
+        False,
+        "<unknown expected schema>",
+        (
+            "expected has no recognized field (value | value_range | delta_from | raises)"
+        ),
     )
 
 
