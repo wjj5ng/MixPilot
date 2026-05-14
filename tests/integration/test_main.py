@@ -59,6 +59,10 @@ class TestHealth:
         response = client.get("/health")
         assert response.json()["peak_analysis_enabled"] is False
 
+    def test_reports_dr_analysis_default_false(self, client: TestClient) -> None:
+        response = client.get("/health")
+        assert response.json()["dynamic_range_analysis_enabled"] is False
+
     def test_response_has_no_unexpected_fields(self, client: TestClient) -> None:
         response = client.get("/health")
         assert set(response.json().keys()) == {
@@ -70,6 +74,7 @@ class TestHealth:
             "lufs_analysis_enabled",
             "feedback_analysis_enabled",
             "peak_analysis_enabled",
+            "dynamic_range_analysis_enabled",
         }
 
 

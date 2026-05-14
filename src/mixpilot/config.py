@@ -115,6 +115,26 @@ class PeakAnalysisConfig(BaseModel):
     """True peak 오버샘플링 배수. ITU-R BS.1770-4 권고는 4."""
 
 
+class DynamicRangeAnalysisConfig(BaseModel):
+    """라이브 dynamic range (crest factor) 감시 설정.
+
+    매 프레임 채널별 DR(=20·log10(peak/RMS))을 계산해 정상 범위 밖이면 INFO
+    Recommendation 발화. 자동 액션은 없음(운영자 판단 영역).
+    """
+
+    enabled: bool = False
+    """라이브 DR 감시 활성화 여부. 디폴트 off."""
+
+    low_threshold_db: float = Field(default=6.0, ge=0.0)
+    """이 미만이면 "압축 강함" 알림."""
+
+    high_threshold_db: float = Field(default=20.0, gt=0.0)
+    """이 초과면 "트랜션트 폭 큼" 알림. low_threshold_db보다 커야 함."""
+
+    silence_threshold_db: float = Field(default=0.5, ge=0.0)
+    """DR이 이 미만이면 무음으로 간주 — 평가 스킵."""
+
+
 class FeedbackAnalysisConfig(BaseModel):
     """라이브 feedback (하울링) 감지 설정.
 
@@ -199,6 +219,9 @@ class Settings(BaseSettings):
         default_factory=FeedbackAnalysisConfig
     )
     peak_analysis: PeakAnalysisConfig = Field(default_factory=PeakAnalysisConfig)
+    dynamic_range_analysis: DynamicRangeAnalysisConfig = Field(
+        default_factory=DynamicRangeAnalysisConfig
+    )
 
     dev_cors_enabled: bool = False
     """프론트엔드 dev 서버(http://localhost:5173)에서의 CORS 요청을 허용한다.

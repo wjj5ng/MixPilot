@@ -23,6 +23,7 @@ class HealthResponse(BaseModel):
     lufs_analysis_enabled: bool
     feedback_analysis_enabled: bool
     peak_analysis_enabled: bool
+    dynamic_range_analysis_enabled: bool
 
 
 class ControlResponse(BaseModel):

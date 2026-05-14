@@ -147,6 +147,8 @@ export interface components {
             feedback_analysis_enabled: boolean;
             /** Peak Analysis Enabled */
             peak_analysis_enabled: boolean;
+            /** Dynamic Range Analysis Enabled */
+            dynamic_range_analysis_enabled: boolean;
         };
         /**
          * OscMessage

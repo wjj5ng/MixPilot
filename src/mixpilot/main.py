@@ -52,6 +52,7 @@ from mixpilot.infra.m32_control import M32OscController
 from mixpilot.infra.synthetic_audio import SyntheticAudioSource
 from mixpilot.rules import (
     evaluate_all_channels,
+    evaluate_all_channels_dynamic_range,
     evaluate_all_channels_lufs,
     evaluate_all_channels_peak,
     evaluate_all_feedback,
@@ -188,6 +189,10 @@ async def _processing_loop(
     peak_enabled: bool = False,
     peak_headroom_threshold_dbfs: float = -1.0,
     peak_oversample: int = 4,
+    dynamic_range_enabled: bool = False,
+    dynamic_range_low_threshold_db: float = 6.0,
+    dynamic_range_high_threshold_db: float = 20.0,
+    dynamic_range_silence_threshold_db: float = 0.5,
 ) -> None:
     """오디오 프레임 → 룰 평가 → 제어 송신 + 브로커 푸시.
 
@@ -254,6 +259,16 @@ async def _processing_loop(
                         channels,
                         headroom_threshold_dbfs=peak_headroom_threshold_dbfs,
                         oversample=peak_oversample,
+                    )
+                )
+
+            if dynamic_range_enabled:
+                recommendations.extend(
+                    evaluate_all_channels_dynamic_range(
+                        channels,
+                        low_threshold_db=dynamic_range_low_threshold_db,
+                        high_threshold_db=dynamic_range_high_threshold_db,
+                        silence_threshold_db=dynamic_range_silence_threshold_db,
                     )
                 )
 
@@ -350,15 +365,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             cfg.peak_analysis.headroom_threshold_dbfs
                         ),
                         peak_oversample=cfg.peak_analysis.oversample,
+                        dynamic_range_enabled=cfg.dynamic_range_analysis.enabled,
+                        dynamic_range_low_threshold_db=(
+                            cfg.dynamic_range_analysis.low_threshold_db
+                        ),
+                        dynamic_range_high_threshold_db=(
+                            cfg.dynamic_range_analysis.high_threshold_db
+                        ),
+                        dynamic_range_silence_threshold_db=(
+                            cfg.dynamic_range_analysis.silence_threshold_db
+                        ),
                     )
                 )
                 logger.info(
-                    "audio started (mode=%s device=%s lufs=%s feedback=%s peak=%s)",
+                    "audio started "
+                    "(mode=%s device=%s lufs=%s feedback=%s peak=%s dr=%s)",
                     cfg.m32.operating_mode.value,
                     cfg.audio.device_substring,
                     "on" if cfg.lufs_analysis.enabled else "off",
                     "on" if cfg.feedback_analysis.enabled else "off",
                     "on" if cfg.peak_analysis.enabled else "off",
+                    "on" if cfg.dynamic_range_analysis.enabled else "off",
                 )
             except Exception:
                 logger.exception(
@@ -416,6 +443,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             lufs_analysis_enabled=cfg.lufs_analysis.enabled,
             feedback_analysis_enabled=cfg.feedback_analysis.enabled,
             peak_analysis_enabled=cfg.peak_analysis.enabled,
+            dynamic_range_analysis_enabled=cfg.dynamic_range_analysis.enabled,
         )
 
     @app.get("/control/recent-actions", response_model=RecentActionsResponse)

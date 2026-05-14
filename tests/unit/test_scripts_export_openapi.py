@@ -49,6 +49,7 @@ class TestExportOpenapi:
             "lufs_analysis_enabled",
             "feedback_analysis_enabled",
             "peak_analysis_enabled",
+            "dynamic_range_analysis_enabled",
         }
 
     def test_recommendation_event_has_expected_fields(self) -> None:
