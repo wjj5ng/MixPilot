@@ -90,7 +90,7 @@ class AuditLogResponse(BaseModel):
 
 
 class ChannelMeter(BaseModel):
-    """단일 채널의 미터 스냅샷 — 라벨·카테고리 + RMS·peak + LRA(누적)."""
+    """단일 채널 미터 — 라벨·카테고리·RMS·peak·LRA·옥타브 스펙트럼."""
 
     channel: int
     label: str
@@ -99,6 +99,9 @@ class ChannelMeter(BaseModel):
     peak_dbfs: float
     lra_lu: float | None = None
     """가장 최근 평가된 LRA(LU). 미평가/비활성이면 null."""
+
+    octave_bands_dbfs: list[float] = []
+    """현재 프레임의 옥타브 밴드 레벨 (8개: 125·250·500·1k·2k·4k·8k·16k Hz)."""
 
 
 class MeterSnapshotEvent(BaseModel):

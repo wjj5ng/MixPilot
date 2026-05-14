@@ -49,6 +49,7 @@ from mixpilot.domain import (
 )
 from mixpilot.dsp import (
     MIN_DURATION_SECONDS,
+    octave_band_levels_dbfs,
     peak_channels,
     rms_channels,
     to_dbfs,
@@ -185,6 +186,9 @@ def _compute_meter_payload(
                 "peak_dbfs": to_dbfs(float(peak_lin[idx])),
                 "lra_lu": (
                     lra_by_channel.get(ch_id) if lra_by_channel else None
+                ),
+                "octave_bands_dbfs": octave_band_levels_dbfs(
+                    ch.samples, ch.format.sample_rate
                 ),
             }
         )

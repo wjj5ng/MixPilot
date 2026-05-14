@@ -26,6 +26,7 @@ from .peak import (
     true_peak_channels,
 )
 from .rms import SILENCE_FLOOR_DBFS, rms, rms_channels, to_dbfs
+from .spectrum import OCTAVE_CENTERS_HZ, octave_band_levels_dbfs
 
 __all__ = [
     "DEFAULT_NEIGHBOR_BAND_HZ",
@@ -33,6 +34,7 @@ __all__ = [
     "DEFAULT_TRUE_PEAK_OVERSAMPLE",
     "MIN_DURATION_SECONDS",
     "NO_LRA",
+    "OCTAVE_CENTERS_HZ",
     "SILENCE_FLOOR_DBFS",
     "SILENCE_FLOOR_LUFS",
     "FeedbackPeak",
@@ -42,6 +44,7 @@ __all__ = [
     "lra",
     "lufs_channels",
     "lufs_integrated",
+    "octave_band_levels_dbfs",
     "peak",
     "peak_channels",
     "rms",

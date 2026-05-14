@@ -132,6 +132,27 @@ class TestComputeMeterPayload:
             assert math.isfinite(ch["rms_dbfs"])
             assert math.isfinite(ch["peak_dbfs"])
 
+    def test_octave_bands_included(self) -> None:
+        # 페이로드에 옥타브 밴드 8개가 항상 포함되어야 함.
+        ch = _ch(np.zeros(100), channel_id=1)
+        payload = _compute_meter_payload([ch], capture_seq=0)
+        bands = payload["channels"][0]["octave_bands_dbfs"]
+        assert isinstance(bands, list)
+        assert len(bands) == 8
+
+    def test_octave_bands_reflect_signal(self) -> None:
+        # 1 kHz 사인 → 1 kHz 밴드 인덱스(3)에서 최대.
+        sr = 48000
+        t = np.arange(2048) / sr
+        sig = (0.5 * np.sin(2 * np.pi * 1000 * t)).astype(np.float64)
+        ch = _ch(sig, channel_id=1)
+        payload = _compute_meter_payload([ch], capture_seq=0)
+        bands = payload["channels"][0]["octave_bands_dbfs"]
+        max_idx = max(range(len(bands)), key=lambda i: bands[i])
+        # OCTAVE_CENTERS_HZ: (125, 250, 500, 1000, 2000, 4000, 8000, 16000)
+        # → 1 kHz 인덱스 = 3.
+        assert max_idx == 3
+
 
 class TestMeterBroker:
     def test_subscribe_returns_unique_queues(self) -> None:

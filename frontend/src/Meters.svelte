@@ -62,6 +62,22 @@
     return "#6fcf97";
   }
 
+  // 옥타브 밴드 표시 스케일: -60(floor) ~ 0(ceiling) dBFS.
+  const BAND_FLOOR_DBFS = -60;
+  const BAND_CEILING_DBFS = 0;
+
+  /** 밴드 dBFS → 0(낮음) ~ 1(높음) 정규화 (시각 막대 높이 비율). */
+  function bandLevel(db: number): number {
+    if (!Number.isFinite(db)) return 0;
+    return Math.max(
+      0,
+      Math.min(1, (db - BAND_FLOOR_DBFS) / (BAND_CEILING_DBFS - BAND_FLOOR_DBFS)),
+    );
+  }
+
+  // 표시용 옥타브 라벨 (백엔드의 OCTAVE_CENTERS_HZ와 동일 순서).
+  const OCTAVE_LABELS = ["125", "250", "500", "1k", "2k", "4k", "8k", "16k"];
+
   /** 해당 채널의 hold dBFS, 없으면 현재 peak로 폴백. */
   function holdDbfs(ch: ChannelMeter): number {
     return holds.get(ch.channel)?.dbfs ?? ch.peak_dbfs;
@@ -107,6 +123,19 @@
                 : `${ch.lra_lu.toFixed(1)} LU`}
             </span>
           </div>
+          <div class="meter-spectrum" role="img" aria-label="옥타브 스펙트럼">
+            {#each ch.octave_bands_dbfs ?? [] as bandDb, i (i)}
+              <div
+                class="band-cell"
+                title="{OCTAVE_LABELS[i] ?? `band ${i + 1}`} Hz: {bandDb.toFixed(1)} dBFS"
+              >
+                <div
+                  class="band-fill"
+                  style="height: {bandLevel(bandDb) * 100}%; background: {colorFor(bandDb)};"
+                ></div>
+              </div>
+            {/each}
+          </div>
         </div>
       {/each}
     </div>
@@ -138,9 +167,43 @@
   .meter {
     display: grid;
     grid-template-columns: 11rem 1fr auto;
+    grid-template-rows: auto auto;
     align-items: center;
-    gap: 0.5rem;
+    column-gap: 0.5rem;
+    row-gap: 0.2rem;
     font-size: 0.8rem;
+  }
+  .meter-ident {
+    grid-row: 1 / span 2;
+  }
+  .meter-bar {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .meter-values {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .meter-spectrum {
+    grid-column: 2 / span 2;
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 1px;
+    height: 0.4rem;
+  }
+  .band-cell {
+    background: #1a1d24;
+    border-radius: 0.05rem;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+  }
+  .band-fill {
+    width: 100%;
+    transition: height 60ms linear, background 60ms linear;
+    opacity: 0.85;
   }
   .meter-ident {
     display: flex;

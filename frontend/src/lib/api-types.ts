@@ -208,7 +208,7 @@ export interface components {
         };
         /**
          * ChannelMeter
-         * @description 단일 채널의 미터 스냅샷 — 라벨·카테고리 + RMS·peak + LRA(누적).
+         * @description 단일 채널 미터 — 라벨·카테고리·RMS·peak·LRA·옥타브 스펙트럼.
          */
         ChannelMeter: {
             /** Channel */
@@ -223,6 +223,11 @@ export interface components {
             peak_dbfs: number;
             /** Lra Lu */
             lra_lu?: number | null;
+            /**
+             * Octave Bands Dbfs
+             * @default []
+             */
+            octave_bands_dbfs: number[];
         };
         /**
          * ControlResponse
