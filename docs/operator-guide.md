@@ -124,6 +124,9 @@ npm --prefix frontend run dev
 - **룰 토글**에서 발화 많은 룰 일시 OFF
 - 또는 **추천 스트림 비우기** 자주
 - service 후 감사 로그에서 패턴 찾기
+- Peak·DR이 짧은 어택·핸들링 노이즈에 자주 발화 → `MIXPILOT_PEAK_ANALYSIS__PERSISTENCE_FRAMES=3`
+  (또는 `_DYNAMIC_RANGE_..._PERSISTENCE_FRAMES=3`)로 N 연속 frame일 때만 발화하게
+  올림. 디폴트 1(즉시 발화) → 3 권장.
 
 ### 자동 액션이 콘솔에 안 보임
 - 운영 모드 확인: `dry-run`이면 *송신 안 함*이 정상
@@ -155,6 +158,10 @@ MIXPILOT_FEEDBACK_ANALYSIS__PNR_THRESHOLD_DB=15.0
 
 # Peak 헤드룸 (0보다 작아야)
 MIXPILOT_PEAK_ANALYSIS__HEADROOM_THRESHOLD_DBFS=-1.0
+
+# Peak·DR 추천을 N 연속 frame 임계 초과 시에만 발화 (1=즉시, 2~5=transient 필터)
+MIXPILOT_PEAK_ANALYSIS__PERSISTENCE_FRAMES=3
+MIXPILOT_DYNAMIC_RANGE_ANALYSIS__PERSISTENCE_FRAMES=3
 
 # 감사 로그 파일 위치 (service별 분리 권장)
 MIXPILOT_AUDIT_LOG_PATH=./logs/audit-$(date +%Y%m%d).jsonl

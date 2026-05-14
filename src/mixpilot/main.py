@@ -86,6 +86,7 @@ from mixpilot.rules import (
 from mixpilot.runtime import (
     ActionHistory,
     FeedbackDetector,
+    PersistenceFilter,
     RollingBuffer,
     RuleToggles,
 )
@@ -318,6 +319,9 @@ async def _processing_loop(
     dynamic_range_low_threshold_db: float = 6.0,
     dynamic_range_high_threshold_db: float = 20.0,
     dynamic_range_silence_threshold_db: float = 0.5,
+    peak_persistence_frames: int = 1,
+    dynamic_range_persistence_frames: int = 1,
+    persistence_filter: PersistenceFilter | None = None,
     lra_buffer: RollingBuffer,
     lra_eval_interval_frames: int = 300,
     lra_low_threshold_lu: float = 5.0,
@@ -338,6 +342,10 @@ async def _processing_loop(
     (다시 ON 했을 때 즉시 의미 있는 결과 얻을 수 있도록).
     """
     meter_enabled = meter_broker is not None
+    # persistence filter는 외부 주입 가능(테스트 격리). 없으면 새로 생성.
+    pfilter = (
+        persistence_filter if persistence_filter is not None else PersistenceFilter()
+    )
     # 채널 → 최신 LRA 값 캐시. publish cadence(~9 Hz) > LRA eval cadence(~0.3 Hz)이므로
     # 매 publish에 최신 LRA를 포함하려면 이전 평가값을 보관해야 한다.
     latest_lra: dict[int, float] = {}
@@ -389,24 +397,42 @@ async def _processing_loop(
                     )
                 )
 
+            # Peak·DR은 PersistenceFilter로 N 연속 frame 임계 초과 시에만 통과.
+            # 토글 OFF면 빈 observe로 streak 자연 감쇠 — 다음 ON 시 처음부터 카운트.
             if tg["peak"]:
-                recommendations.extend(
-                    evaluate_all_channels_peak(
-                        channels,
-                        headroom_threshold_dbfs=peak_headroom_threshold_dbfs,
-                        oversample=peak_oversample,
-                    )
+                peak_recs = evaluate_all_channels_peak(
+                    channels,
+                    headroom_threshold_dbfs=peak_headroom_threshold_dbfs,
+                    oversample=peak_oversample,
                 )
+                peak_allowed = pfilter.observe(
+                    "peak",
+                    [int(r.target.channel) for r in peak_recs],
+                    peak_persistence_frames,
+                )
+                recommendations.extend(
+                    r for r in peak_recs if int(r.target.channel) in peak_allowed
+                )
+            else:
+                pfilter.observe("peak", [], peak_persistence_frames)
 
             if tg["dynamic_range"]:
-                recommendations.extend(
-                    evaluate_all_channels_dynamic_range(
-                        channels,
-                        low_threshold_db=dynamic_range_low_threshold_db,
-                        high_threshold_db=dynamic_range_high_threshold_db,
-                        silence_threshold_db=dynamic_range_silence_threshold_db,
-                    )
+                dr_recs = evaluate_all_channels_dynamic_range(
+                    channels,
+                    low_threshold_db=dynamic_range_low_threshold_db,
+                    high_threshold_db=dynamic_range_high_threshold_db,
+                    silence_threshold_db=dynamic_range_silence_threshold_db,
                 )
+                dr_allowed = pfilter.observe(
+                    "dynamic_range",
+                    [int(r.target.channel) for r in dr_recs],
+                    dynamic_range_persistence_frames,
+                )
+                recommendations.extend(
+                    r for r in dr_recs if int(r.target.channel) in dr_allowed
+                )
+            else:
+                pfilter.observe("dynamic_range", [], dynamic_range_persistence_frames)
 
             # Stereo phase는 항상 계산 — meter 캐시 갱신용. 룰 발화만 토글.
             phase_by_pair: dict[tuple[int, int], float] = {}
@@ -647,6 +673,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         ),
                         dynamic_range_silence_threshold_db=(
                             cfg.dynamic_range_analysis.silence_threshold_db
+                        ),
+                        peak_persistence_frames=(cfg.peak_analysis.persistence_frames),
+                        dynamic_range_persistence_frames=(
+                            cfg.dynamic_range_analysis.persistence_frames
                         ),
                         lra_buffer=lra_buffer,
                         lra_eval_interval_frames=(

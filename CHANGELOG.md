@@ -7,6 +7,16 @@ MixPilot의 모든 주목할 만한 변경 사항을 기록합니다.
 
 ## [Unreleased]
 
+### Changed (Unreleased, C2)
+
+- **Peak·DR 룰 sustained context 필터** — `PersistenceFilter`(runtime)로 N 연속
+  frame 임계 초과 시에만 추천 통과. `MIXPILOT_PEAK_ANALYSIS__PERSISTENCE_FRAMES`,
+  `MIXPILOT_DYNAMIC_RANGE_ANALYSIS__PERSISTENCE_FRAMES`(둘 다 디폴트 1=즉시 발화).
+  라이브 transient(어택·핸들링)로 인한 1-frame false positive 방지 — feedback
+  rule이 이미 갖던 persistence 패턴을 peak·DR에도 동일 적용. 룰 토글 OFF 시
+  streak가 자연 감쇠 → ON 직후 즉시 발화하지 않음. 단위 테스트 13건 +
+  config 검증 4건.
+
 ### Added (Unreleased)
 
 - Stereo phase correlation 룰 + 미터 표시 + 채널맵 stereo pair 편집.
