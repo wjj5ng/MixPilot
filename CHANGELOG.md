@@ -26,6 +26,10 @@ MixPilot의 모든 주목할 만한 변경 사항을 기록합니다.
 
 ### Added (Unreleased, continued)
 
+- **운영자 사용 가이드** (`docs/operator-guide.md`) — 음향 운영자가 코드 모르고
+  따라할 수 있는 절차서. 시작 전 체크리스트, service 흐름(시작/중/끝), UI 카드
+  역할표, 알림 종류별 대응, 트러블슈팅, 사후 회고, 비상 시 안내, 빠른 명령 모음.
+
 - **ITU-R BS.1770-4 / EBU Tech 3342 conformance 검증 셋**.
   - `lufs-conformance.yaml` (11 cases): 1 kHz 레벨 선형성(amp 0.5~0.01,
     -9 ~ -43 LUFS) + K-weighting freq response 6 frequencies(125 Hz~8 kHz).
