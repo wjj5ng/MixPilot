@@ -9,6 +9,7 @@
     forceDryRun,
     subscribeMeters,
     subscribeRecommendations,
+    updateChannel,
     type ActionEntry,
     type AuditEntry,
     type ChannelMapEntry,
@@ -80,6 +81,41 @@
         unknown: "미정",
       }[cat] ?? cat
     );
+  }
+
+  // 채널맵 인-라인 편집 state — 한 번에 한 채널만 편집.
+  const CATEGORIES = ["vocal", "preacher", "choir", "instrument", "unknown"];
+  let editingChannel = $state<number | null>(null);
+  let editCategory = $state<string>("unknown");
+  let editLabel = $state<string>("");
+  let editSaving = $state(false);
+  let editError = $state<string | null>(null);
+
+  function startEdit(entry: ChannelMapEntry): void {
+    editingChannel = entry.channel;
+    editCategory = entry.category;
+    editLabel = entry.label;
+    editError = null;
+  }
+
+  function cancelEdit(): void {
+    editingChannel = null;
+    editError = null;
+  }
+
+  async function saveEdit(): Promise<void> {
+    if (editingChannel === null || editSaving) return;
+    editSaving = true;
+    editError = null;
+    try {
+      await updateChannel(editingChannel, editCategory, editLabel);
+      await refreshChannelMap();
+      editingChannel = null;
+    } catch (e) {
+      editError = String(e);
+    } finally {
+      editSaving = false;
+    }
   }
 
   async function handleKillSwitch(): Promise<void> {
@@ -280,23 +316,67 @@
     {:else if channelMap.length === 0}
       <p class="hint">채널맵이 비어 있습니다 — <code>config/channels.yaml</code> 확인.</p>
     {:else}
+      <p class="hint">
+        편집은 즉시 <code>config/channels.yaml</code>에 저장되지만, *라이브
+        처리 루프*는 다음 재시작부터 반영됩니다.
+      </p>
       <table class="channel-map">
         <thead>
           <tr>
             <th>ch</th>
             <th>카테고리</th>
             <th>라벨</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
           {#each channelMap as entry (entry.channel)}
-            <tr>
-              <td class="ch-num">ch{String(entry.channel).padStart(2, "0")}</td>
-              <td class="ch-category">
-                <span class="cat-pill cat-{entry.category}">{categoryLabel(entry.category)}</span>
-              </td>
-              <td class="ch-label">{entry.label || "—"}</td>
-            </tr>
+            {#if editingChannel === entry.channel}
+              <tr class="editing">
+                <td class="ch-num">ch{String(entry.channel).padStart(2, "0")}</td>
+                <td class="ch-category">
+                  <select bind:value={editCategory}>
+                    {#each CATEGORIES as cat (cat)}
+                      <option value={cat}>{categoryLabel(cat)}</option>
+                    {/each}
+                  </select>
+                </td>
+                <td class="ch-label">
+                  <input
+                    type="text"
+                    bind:value={editLabel}
+                    placeholder="라벨"
+                    disabled={editSaving}
+                  />
+                </td>
+                <td class="ch-actions">
+                  <button
+                    class="btn-save"
+                    onclick={saveEdit}
+                    disabled={editSaving}
+                  >{editSaving ? "저장 중…" : "저장"}</button>
+                  <button
+                    class="btn-cancel"
+                    onclick={cancelEdit}
+                    disabled={editSaving}
+                  >취소</button>
+                </td>
+              </tr>
+              {#if editError}
+                <tr><td colspan="4" class="edit-error">오류: {editError}</td></tr>
+              {/if}
+            {:else}
+              <tr>
+                <td class="ch-num">ch{String(entry.channel).padStart(2, "0")}</td>
+                <td class="ch-category">
+                  <span class="cat-pill cat-{entry.category}">{categoryLabel(entry.category)}</span>
+                </td>
+                <td class="ch-label">{entry.label || "—"}</td>
+                <td class="ch-actions">
+                  <button class="btn-edit" onclick={() => startEdit(entry)}>편집</button>
+                </td>
+              </tr>
+            {/if}
           {/each}
         </tbody>
       </table>
@@ -627,6 +707,66 @@
   .reload-btn:hover {
     background: #2a2f39;
     color: #c8cdd6;
+  }
+  .ch-actions {
+    width: 7rem;
+    text-align: right;
+  }
+  .btn-edit,
+  .btn-cancel,
+  .btn-save {
+    background: transparent;
+    color: #8b95a3;
+    border: 1px solid #2a2f39;
+    padding: 0.2rem 0.5rem;
+    border-radius: 0.2rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .btn-edit:hover:not(:disabled),
+  .btn-cancel:hover:not(:disabled) {
+    background: #2a2f39;
+    color: #c8cdd6;
+  }
+  .btn-save {
+    background: #1e3a5f;
+    color: #aac4ff;
+    border-color: #2a4a73;
+    margin-right: 0.25rem;
+  }
+  .btn-save:hover:not(:disabled) {
+    background: #2a4a73;
+  }
+  .btn-save:disabled,
+  .btn-cancel:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  tr.editing {
+    background: #1f232b;
+  }
+  tr.editing select,
+  tr.editing input[type="text"] {
+    background: #1a1d24;
+    color: #e6e8eb;
+    border: 1px solid #2a4a73;
+    border-radius: 0.2rem;
+    padding: 0.2rem 0.4rem;
+    font-size: 0.8rem;
+    font-family: inherit;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  tr.editing input[type="text"]:focus,
+  tr.editing select:focus {
+    outline: none;
+    border-color: #6c8cff;
+  }
+  .edit-error {
+    color: #ff7676;
+    font-size: 0.8rem;
+    padding: 0.25rem 0.5rem;
   }
 
   /* 감사 로그 카드 */

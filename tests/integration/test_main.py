@@ -198,6 +198,69 @@ class TestChannelMapEndpoint:
         assert response.status_code == 200
         assert len(response.json()["entries"]) > 0
 
+    def test_update_channel_persists(self, tmp_path: Path) -> None:
+        # tmp_path에 fresh channels.yaml 작성 후 PUT으로 갱신.
+        channels_path = tmp_path / "channels.yaml"
+        channels_path.write_text(
+            "channels:\n  - id: 1\n    category: vocal\n    label: orig\n",
+            encoding="utf-8",
+        )
+        settings = Settings(channel_map_path=channels_path)
+        app = create_app(settings=settings)
+        client = TestClient(app)
+        with client:
+            response = client.put(
+                "/channels/1",
+                json={"category": "preacher", "label": "설교자 메인"},
+            )
+        assert response.status_code == 200
+        body = response.json()
+        assert body == {
+            "channel": 1,
+            "category": "preacher",
+            "label": "설교자 메인",
+        }
+        # YAML이 갱신됐는지 — 새 GET으로.
+        with TestClient(app) as c2:
+            entries = c2.get("/channels").json()["entries"]
+        assert entries[0]["category"] == "preacher"
+        assert entries[0]["label"] == "설교자 메인"
+
+    def test_update_channel_rejects_invalid_category(self, tmp_path: Path) -> None:
+        channels_path = tmp_path / "channels.yaml"
+        channels_path.write_text(
+            "channels:\n  - id: 1\n    category: vocal\n",
+            encoding="utf-8",
+        )
+        settings = Settings(channel_map_path=channels_path)
+        app = create_app(settings=settings)
+        client = TestClient(app)
+        with client:
+            response = client.put(
+                "/channels/1",
+                json={"category": "drum", "label": "x"},
+            )
+        assert response.status_code == 400
+        assert "invalid category" in response.json()["detail"]
+
+    def test_update_channel_creates_new_id(self, tmp_path: Path) -> None:
+        channels_path = tmp_path / "channels.yaml"
+        channels_path.write_text("channels: []\n", encoding="utf-8")
+        settings = Settings(channel_map_path=channels_path)
+        app = create_app(settings=settings)
+        client = TestClient(app)
+        with client:
+            response = client.put(
+                "/channels/7",
+                json={"category": "choir", "label": "성가대 TEN"},
+            )
+        assert response.status_code == 200
+        # 1개 entry 확인.
+        with TestClient(app) as c2:
+            entries = c2.get("/channels").json()["entries"]
+        assert len(entries) == 1
+        assert entries[0]["channel"] == 7
+
 
 class TestAuditLogEndpoint:
     """ADR-0008 §3 — GET /control/audit-log/recent."""

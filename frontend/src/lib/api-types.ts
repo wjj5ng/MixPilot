@@ -70,6 +70,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/channels/{channel_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Channel
+         * @description 채널 카테고리·라벨 갱신 — YAML에 즉시 영속, 라이브 루프는 재시작 후 반영.
+         *
+         *     Body:
+         *         category: 'vocal' | 'preacher' | 'choir' | 'instrument' | 'unknown'
+         *         label: 자유 문자열 (빈 문자열 허용).
+         *
+         *     Returns:
+         *         갱신 직후의 ChannelMapEntry.
+         *
+         *     Raises:
+         *         HTTP 400: category가 유효하지 않을 때.
+         *         HTTP 422: channel_id가 1 이상이 아닐 때 (FastAPI 기본 검증).
+         */
+        put: operations["update_channel_channels__channel_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/control/audit-log/recent": {
         parameters: {
             query?: never;
@@ -248,6 +279,19 @@ export interface components {
         ChannelMapResponse: {
             /** Entries */
             entries: components["schemas"]["ChannelMapEntry"][];
+        };
+        /**
+         * ChannelMapUpdateRequest
+         * @description `PUT /channels/{id}` 요청 body — 카테고리·라벨 갱신.
+         */
+        ChannelMapUpdateRequest: {
+            /** Category */
+            category: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
         };
         /**
          * ChannelMeter
@@ -451,6 +495,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChannelMapResponse"];
+                };
+            };
+        };
+    };
+    update_channel_channels__channel_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                channel_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChannelMapUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelMapEntry"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

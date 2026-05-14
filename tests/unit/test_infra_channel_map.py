@@ -97,6 +97,54 @@ class TestMalformedYaml:
         meta = YamlChannelMetadata(p)
         assert list(asyncio.run(meta.get_all_channels())) == []
 
+    def test_update_channel_persists_to_yaml(self, tmp_path: Path) -> None:
+        p = tmp_path / "channels.yaml"
+        p.write_text(
+            """\
+channels:
+  - id: 1
+    category: vocal
+    label: 원본 라벨
+""",
+            encoding="utf-8",
+        )
+        meta = YamlChannelMetadata(p)
+        asyncio.run(meta.get_all_channels())  # 캐시 로드.
+        updated = meta.update_channel(
+            1, category=SourceCategory.PREACHER, label="설교자 메인"
+        )
+        assert int(updated.channel) == 1
+        assert updated.category is SourceCategory.PREACHER
+        assert updated.label == "설교자 메인"
+        # YAML에 영속화됐는지 새 인스턴스로 재로드.
+        meta2 = YamlChannelMetadata(p)
+        sources = list(asyncio.run(meta2.get_all_channels()))
+        assert len(sources) == 1
+        assert sources[0].category is SourceCategory.PREACHER
+        assert sources[0].label == "설교자 메인"
+
+    def test_update_channel_adds_new_id(self, tmp_path: Path) -> None:
+        p = tmp_path / "channels.yaml"
+        p.write_text(
+            "channels:\n  - id: 1\n    category: vocal\n",
+            encoding="utf-8",
+        )
+        meta = YamlChannelMetadata(p)
+        asyncio.run(meta.get_all_channels())
+        meta.update_channel(5, category=SourceCategory.CHOIR, label="성가대 SOP")
+        meta2 = YamlChannelMetadata(p)
+        sources = list(asyncio.run(meta2.get_all_channels()))
+        assert {int(s.channel) for s in sources} == {1, 5}
+
+    def test_update_channel_atomic_no_tmp_leak(self, tmp_path: Path) -> None:
+        # .tmp 파일이 정상 처리 후 남지 않아야 함.
+        p = tmp_path / "channels.yaml"
+        p.write_text("channels: []\n", encoding="utf-8")
+        meta = YamlChannelMetadata(p)
+        meta.update_channel(3, category=SourceCategory.INSTRUMENT, label="기타")
+        tmp_files = list(tmp_path.glob("*.tmp"))
+        assert tmp_files == []
+
     def test_skips_malformed_entries(self, tmp_path: Path) -> None:
         p = tmp_path / "channels.yaml"
         p.write_text(

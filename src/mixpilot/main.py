@@ -33,6 +33,7 @@ from mixpilot.api.schemas import (
     AuditLogResponse,
     ChannelMapEntry,
     ChannelMapResponse,
+    ChannelMapUpdateRequest,
     ControlResponse,
     HealthResponse,
     MeterSnapshotEvent,
@@ -693,6 +694,49 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             for s in sources
         ]
         return ChannelMapResponse(entries=entries)
+
+    @app.put("/channels/{channel_id}", response_model=ChannelMapEntry)
+    async def update_channel(
+        channel_id: int,
+        body: ChannelMapUpdateRequest,
+        request: Request,
+    ) -> ChannelMapEntry:
+        """채널 카테고리·라벨 갱신 — YAML에 즉시 영속, 라이브 루프는 재시작 후 반영.
+
+        Body:
+            category: 'vocal' | 'preacher' | 'choir' | 'instrument' | 'unknown'
+            label: 자유 문자열 (빈 문자열 허용).
+
+        Returns:
+            갱신 직후의 ChannelMapEntry.
+
+        Raises:
+            HTTP 400: category가 유효하지 않을 때.
+            HTTP 422: channel_id가 1 이상이 아닐 때 (FastAPI 기본 검증).
+        """
+        from fastapi import HTTPException
+
+        from mixpilot.domain import SourceCategory
+
+        if channel_id < 1:
+            raise HTTPException(
+                status_code=422, detail=f"channel_id must be >= 1, got {channel_id}"
+            )
+        try:
+            category = SourceCategory(body.category.lower())
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400, detail=f"invalid category: {body.category}"
+            ) from e
+        cm: YamlChannelMetadata = request.app.state.channel_map
+        updated = cm.update_channel(
+            channel_id, category=category, label=body.label
+        )
+        return ChannelMapEntry(
+            channel=int(updated.channel),
+            category=updated.category.value,
+            label=updated.label,
+        )
 
     @app.get("/control/audit-log/recent", response_model=AuditLogResponse)
     async def audit_log_recent(

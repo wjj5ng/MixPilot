@@ -61,6 +61,24 @@ export async function fetchChannelMap(): Promise<ChannelMapResponse> {
   return (await response.json()) as ChannelMapResponse;
 }
 
+/** 단일 채널 매핑 갱신 — YAML 영속, 라이브 루프는 재시작 후 반영. */
+export async function updateChannel(
+  channel: number,
+  category: string,
+  label: string,
+): Promise<ChannelMapEntry> {
+  const response = await fetch(`${API_BASE_URL}/channels/${channel}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ category, label }),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`/channels/${channel} failed: ${response.status} ${detail}`);
+  }
+  return (await response.json()) as ChannelMapEntry;
+}
+
 /** 감사 로그 JSONL의 최근 레코드 — ADR-0008 §3 영구 이력. */
 export async function fetchAuditLog(
   limit: number = 50,

@@ -103,6 +103,13 @@ class ChannelMapResponse(BaseModel):
     entries: list[ChannelMapEntry]
 
 
+class ChannelMapUpdateRequest(BaseModel):
+    """`PUT /channels/{id}` 요청 body — 카테고리·라벨 갱신."""
+
+    category: str
+    label: str = ""
+
+
 class ChannelMeter(BaseModel):
     """단일 채널 미터 — 라벨·카테고리·RMS·peak·LRA·옥타브 스펙트럼."""
 
