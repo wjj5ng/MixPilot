@@ -7,6 +7,13 @@ MixPilot의 모든 주목할 만한 변경 사항을 기록합니다.
 
 ## [Unreleased]
 
+### Added (Unreleased, 가이드 #2)
+
+- **추천 스트림 새 알림 시각 강조** — 매 도착 시 6초 펄스 애니메이션
+  (`.rec--new`) + 카드 헤더에 미확인 카운트 배지(`새 알림 N건`). "확인"
+  버튼은 카운트만 0으로 리셋(추천 자체는 보존), "비우기"는 둘 다 초기화.
+  service 중 운영자가 다른 카드 보다가도 새 알림이 깜박여 즉시 인지 가능.
+
 ### Changed (Unreleased, C2)
 
 - **Peak·DR 룰 sustained context 필터** — `PersistenceFilter`(runtime)로 N 연속

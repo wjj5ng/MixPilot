@@ -27,7 +27,14 @@
 
   let health = $state<HealthResponse | null>(null);
   let healthError = $state<string | null>(null);
-  let recommendations = $state<RecommendationPayload[]>([]);
+  // 추천 + 도착 시각. service 운영자가 새 알림을 놓치지 않도록 발화 시각 추적.
+  type StreamedRecommendation = RecommendationPayload & { receivedAt: number };
+  let recommendations = $state<StreamedRecommendation[]>([]);
+  // 마지막 "확인" 누른 시각. receivedAt > lastAckedAt 인 추천은 미확인 = 강조.
+  let lastAckedAt = $state<number>(Date.now());
+  // 최근 도착 후 NEW_PULSE_MS 동안 펄스 강조. 매 250ms 톡으로 재평가 트리거.
+  const NEW_PULSE_MS = 6_000;
+  let nowTick = $state<number>(Date.now());
   let streamConnected = $state(false);
   let recentActions = $state<ActionEntry[]>([]);
   let killSwitchStatus = $state<string | null>(null);
@@ -62,6 +69,7 @@
   let unsubscribeMeters: (() => void) | null = null;
   let recentActionsTimer: ReturnType<typeof setInterval> | null = null;
   let auditLogTimer: ReturnType<typeof setInterval> | null = null;
+  let nowTickTimer: ReturnType<typeof setInterval> | null = null;
 
   async function refreshRecentActions(): Promise<void> {
     try {
@@ -243,13 +251,19 @@
     unsubscribe = subscribeRecommendations(
       (rec) => {
         streamConnected = true;
-        // 최신을 위쪽에. 최대 N개 유지.
-        recommendations = [rec, ...recommendations].slice(0, MAX_VISIBLE_RECS);
+        // 최신을 위쪽에. 도착 시각을 함께 박아 펄스/미확인 카운트 계산에 사용.
+        const withTs: StreamedRecommendation = { ...rec, receivedAt: Date.now() };
+        recommendations = [withTs, ...recommendations].slice(0, MAX_VISIBLE_RECS);
       },
       () => {
         streamConnected = false;
       },
     );
+
+    // 펄스 표시·미확인 카운트는 시간에 종속 — 1/4초 톡으로 재평가 트리거.
+    nowTickTimer = setInterval(() => {
+      nowTick = Date.now();
+    }, 250);
 
     unsubscribeMeters = subscribeMeters(
       (snapshot) => {
@@ -283,6 +297,7 @@
     if (unsubscribeMeters) unsubscribeMeters();
     if (recentActionsTimer !== null) clearInterval(recentActionsTimer);
     if (auditLogTimer !== null) clearInterval(auditLogTimer);
+    if (nowTickTimer !== null) clearInterval(nowTickTimer);
   });
 
   // 감사 로그 필터.
@@ -380,6 +395,21 @@
 
   function clearRecommendations(): void {
     recommendations = [];
+    lastAckedAt = Date.now();
+  }
+
+  function acknowledgeRecommendations(): void {
+    lastAckedAt = Date.now();
+  }
+
+  // 미확인 카운트 — 마지막 확인 시각 이후 도착한 추천.
+  const unreadRecCount = $derived(
+    recommendations.filter((r) => r.receivedAt > lastAckedAt).length,
+  );
+
+  function isRecNewlyArrived(rec: StreamedRecommendation): boolean {
+    // 도착 후 NEW_PULSE_MS 이내면 펄스. nowTick 갱신 시 자동 재계산.
+    return nowTick - rec.receivedAt < NEW_PULSE_MS;
   }
 </script>
 
@@ -733,6 +763,11 @@
   <section class="card">
     <h2>
       추천 스트림
+      {#if unreadRecCount > 0}
+        <span class="unread-badge" title="미확인 추천 — 확인 버튼으로 리셋">
+          새 알림 {unreadRecCount}건
+        </span>
+      {/if}
       <span class="stream-status" class:connected={streamConnected}>
         {streamConnected ? "수신 중" : "대기"}
       </span>
@@ -756,6 +791,12 @@
         >정보만</button>
       </div>
       <button
+        class="ack-btn"
+        disabled={unreadRecCount === 0}
+        onclick={acknowledgeRecommendations}
+        title="새 알림 카운트를 0으로 — 추천 자체는 유지"
+      >확인 ({unreadRecCount})</button>
+      <button
         class="clear-btn"
         disabled={recommendations.length === 0}
         onclick={clearRecommendations}
@@ -771,7 +812,11 @@
     {:else}
       <ul class="rec-list">
         {#each visibleRecommendations as rec, i (i)}
-          <li class="rec rec--{rec.kind}">
+          <li
+            class="rec rec--{rec.kind}"
+            class:rec--new={isRecNewlyArrived(rec)}
+            class:rec--unack={rec.receivedAt > lastAckedAt}
+          >
             <div class="rec-head">
               <span class="rec-channel">ch{String(rec.channel).padStart(2, "0")}</span>
               <span class="rec-kind">{kindLabel(rec.kind)}</span>
@@ -1262,7 +1307,8 @@
     color: #aac4ff;
     border-color: #2a4a73;
   }
-  .clear-btn {
+  .clear-btn,
+  .ack-btn {
     background: transparent;
     color: #8b95a3;
     border: 1px solid #2a2f39;
@@ -1272,13 +1318,42 @@
     cursor: pointer;
     transition: background 0.1s, color 0.1s;
   }
-  .clear-btn:hover:not(:disabled) {
+  .clear-btn:hover:not(:disabled),
+  .ack-btn:hover:not(:disabled) {
     background: #2a2f39;
     color: #c8cdd6;
   }
-  .clear-btn:disabled {
+  .clear-btn:disabled,
+  .ack-btn:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+  }
+  .ack-btn:not(:disabled) {
+    color: #ffcc88;
+    border-color: #6a4a1f;
+    background: #2a1f0d;
+  }
+  .ack-btn:not(:disabled):hover {
+    background: #3a2912;
+  }
+
+  .unread-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: #4a2f0d;
+    color: #ffd093;
+    border: 1px solid #6a4a1f;
+    margin-left: 0.5rem;
+    animation: badge-pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes badge-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255, 204, 136, 0.0); }
+    50% { box-shadow: 0 0 0 4px rgba(255, 204, 136, 0.18); }
   }
 
   .rec-list {
@@ -1300,6 +1375,23 @@
   }
   .rec--info {
     border-left-color: #6c8cff;
+  }
+  .rec--unack {
+    background: #2a2f3b;
+  }
+  .rec--new {
+    animation: rec-flash 1.0s ease-out;
+  }
+  .rec--new.rec--feedback_alert {
+    animation: rec-flash-alert 1.0s ease-out;
+  }
+  @keyframes rec-flash {
+    0% { background: #2a3a5a; box-shadow: 0 0 0 0 rgba(108, 140, 255, 0.5); }
+    100% { background: #2a2f3b; box-shadow: 0 0 0 0 rgba(108, 140, 255, 0); }
+  }
+  @keyframes rec-flash-alert {
+    0% { background: #4a2424; box-shadow: 0 0 0 0 rgba(255, 118, 118, 0.6); }
+    100% { background: #2a2f3b; box-shadow: 0 0 0 0 rgba(255, 118, 118, 0); }
   }
   .rec-head {
     display: flex;
