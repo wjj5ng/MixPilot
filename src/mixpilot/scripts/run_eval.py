@@ -5,13 +5,20 @@
 
 사용:
     uv run python -m mixpilot.scripts.run_eval evals/cases/rms-baseline.yaml
-    uv run python -m mixpilot.scripts.run_eval evals/cases/*.yaml
+    uv run python -m mixpilot.scripts.run_eval evals/cases/lufs-baseline.yaml
 
 지원하는 신호 종류: sine, dc, silence, impulse.
-지원하는 DSP 함수: mixpilot.dsp.rms.rms.
+지원하는 DSP 함수:
+    - mixpilot.dsp.rms.rms
+    - mixpilot.dsp.lufs.lufs_integrated
 
-다른 DSP 함수는 점진적으로 dispatch 테이블에 추가. 알 수 없는
-`function_under_test`는 케이스를 SKIP하고 보고서에 표시.
+지원하는 expected 스키마:
+    - value + (tolerance_abs | tolerance_rel)
+    - value_range: [min, max]
+    - delta_from: <case_id> + delta_value + tolerance_abs
+    - raises: <ExceptionTypeName> + match: <substring>
+
+다른 DSP 함수·expected 스키마는 점진적으로 dispatch 테이블에 추가.
 """
 
 from __future__ import annotations
@@ -26,6 +33,7 @@ from typing import Any
 import numpy as np
 import yaml
 
+from mixpilot.dsp.lufs import lufs_integrated
 from mixpilot.dsp.rms import rms
 
 
@@ -35,8 +43,7 @@ class CaseResult:
     function_under_test: str
     passed: bool
     measured: float | None
-    expected: float | None
-    tolerance: float | None
+    expected_summary: str
     reason: str = ""
 
 
@@ -82,6 +89,9 @@ _SIGNAL_GENERATORS: dict[str, Callable[[Mapping[str, Any]], np.ndarray]] = {
 
 _DSP_DISPATCH: dict[str, Callable[[np.ndarray, Mapping[str, Any]], float]] = {
     "mixpilot.dsp.rms.rms": lambda samples, _input: rms(samples),
+    "mixpilot.dsp.lufs.lufs_integrated": lambda samples, input_spec: lufs_integrated(
+        samples, int(input_spec["sample_rate"])
+    ),
 }
 
 
@@ -94,17 +104,75 @@ def _within_tolerance(
     if rel_tol is not None and rel_tol > 0:
         return math.isclose(measured, expected, rel_tol=rel_tol)
     if abs_tol is None and rel_tol is None:
-        # 기본 허용 오차.
         return math.isclose(measured, expected, abs_tol=1e-9)
     return False
 
 
+def _evaluate_expected(
+    measured: float,
+    expected: Mapping[str, Any],
+    prior_measured: Mapping[str, float | None],
+) -> tuple[bool, str, str]:
+    """Returns (passed, expected_summary, failure_reason)."""
+    if "value" in expected:
+        target = float(expected["value"])
+        abs_tol = expected.get("tolerance_abs")
+        rel_tol = expected.get("tolerance_rel")
+        passed = _within_tolerance(
+            measured,
+            target,
+            abs_tol=float(abs_tol) if abs_tol is not None else None,
+            rel_tol=float(rel_tol) if rel_tol is not None else None,
+        )
+        tol_str = ""
+        if abs_tol is not None:
+            tol_str = f" abs_tol={float(abs_tol):.2g}"
+        elif rel_tol is not None:
+            tol_str = f" rel_tol={float(rel_tol):.2g}"
+        summary = f"expected={target:.6g}{tol_str}"
+        return passed, summary, "" if passed else "value out of tolerance"
+
+    if "value_range" in expected:
+        lo, hi = expected["value_range"]
+        lo_f, hi_f = float(lo), float(hi)
+        passed = lo_f <= measured <= hi_f
+        summary = f"range=[{lo_f:.6g}, {hi_f:.6g}]"
+        return passed, summary, "" if passed else "value outside range"
+
+    if "delta_from" in expected:
+        ref_id = str(expected["delta_from"])
+        delta_value = float(expected["delta_value"])
+        abs_tol = float(expected.get("tolerance_abs", 0.0))
+        ref_measured = prior_measured.get(ref_id)
+        summary = (
+            f"delta_from={ref_id} delta={delta_value:.6g} abs_tol={abs_tol:.2g}"
+        )
+        if ref_measured is None:
+            return (
+                False,
+                summary,
+                f"reference case {ref_id!r} not measured (missing or failed earlier)",
+            )
+        actual_delta = measured - ref_measured
+        passed = abs(actual_delta - delta_value) <= abs_tol
+        if not passed:
+            return False, summary, f"delta={actual_delta:.6g} differs from expected"
+        return True, summary, ""
+
+    return False, "<unknown expected schema>", (
+        "expected has no recognized field (value | value_range | delta_from | raises)"
+    )
+
+
 def run_case(
-    function_under_test: str, case: Mapping[str, Any]
+    function_under_test: str,
+    case: Mapping[str, Any],
+    prior_measured: Mapping[str, float | None] | None = None,
 ) -> CaseResult:
     case_id = str(case.get("id", "<unnamed>"))
     input_spec = case.get("input", {})
     expected_spec = case.get("expected", {})
+    prior = prior_measured if prior_measured is not None else {}
 
     kind = input_spec.get("kind")
     if kind not in _SIGNAL_GENERATORS:
@@ -113,8 +181,7 @@ def run_case(
             function_under_test=function_under_test,
             passed=False,
             measured=None,
-            expected=None,
-            tolerance=None,
+            expected_summary="<n/a>",
             reason=f"unsupported signal kind: {kind!r}",
         )
     if function_under_test not in _DSP_DISPATCH:
@@ -123,42 +190,66 @@ def run_case(
             function_under_test=function_under_test,
             passed=False,
             measured=None,
-            expected=None,
-            tolerance=None,
+            expected_summary="<n/a>",
             reason=f"unsupported function: {function_under_test!r}",
         )
-    if "value" not in expected_spec:
+
+    samples = _SIGNAL_GENERATORS[kind](input_spec)
+    dsp_fn = _DSP_DISPATCH[function_under_test]
+
+    if "raises" in expected_spec:
+        exc_name = str(expected_spec["raises"])
+        match_substr = expected_spec.get("match")
+        match_part = f" match={match_substr!r}" if match_substr else ""
+        summary = f"raises={exc_name}{match_part}"
+        try:
+            dsp_fn(samples, input_spec)
+        except Exception as e:
+            actual_name = type(e).__name__
+            if actual_name != exc_name:
+                return CaseResult(
+                    case_id=case_id,
+                    function_under_test=function_under_test,
+                    passed=False,
+                    measured=None,
+                    expected_summary=summary,
+                    reason=f"got {actual_name}: {e}",
+                )
+            if match_substr is not None and str(match_substr) not in str(e):
+                msg = str(e)
+                return CaseResult(
+                    case_id=case_id,
+                    function_under_test=function_under_test,
+                    passed=False,
+                    measured=None,
+                    expected_summary=summary,
+                    reason=f"exception message {msg!r} doesn't match {match_substr!r}",
+                )
+            return CaseResult(
+                case_id=case_id,
+                function_under_test=function_under_test,
+                passed=True,
+                measured=None,
+                expected_summary=summary,
+            )
         return CaseResult(
             case_id=case_id,
             function_under_test=function_under_test,
             passed=False,
             measured=None,
-            expected=None,
-            tolerance=None,
-            reason="expected.value missing — runner only supports scalar value cases",
+            expected_summary=summary,
+            reason=f"expected {exc_name} but no exception raised",
         )
 
-    samples = _SIGNAL_GENERATORS[kind](input_spec)
-    measured = _DSP_DISPATCH[function_under_test](samples, input_spec)
-    expected = float(expected_spec["value"])
-    abs_tol = expected_spec.get("tolerance_abs")
-    rel_tol = expected_spec.get("tolerance_rel")
-    passed = _within_tolerance(
-        measured,
-        expected,
-        abs_tol=float(abs_tol) if abs_tol is not None else None,
-        rel_tol=float(rel_tol) if rel_tol is not None else None,
-    )
+    measured = float(dsp_fn(samples, input_spec))
+    passed, summary, failure = _evaluate_expected(measured, expected_spec, prior)
     return CaseResult(
         case_id=case_id,
         function_under_test=function_under_test,
         passed=passed,
-        measured=float(measured),
-        expected=expected,
-        tolerance=(
-            float(abs_tol) if abs_tol is not None
-            else (float(rel_tol) if rel_tol is not None else None)
-        ),
+        measured=measured,
+        expected_summary=summary,
+        reason=failure,
     )
 
 
@@ -167,21 +258,30 @@ def run_yaml_file(path: Path) -> list[CaseResult]:
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     function_under_test = str(data.get("function_under_test", ""))
     cases = data.get("cases", []) or []
-    return [run_case(function_under_test, c) for c in cases if isinstance(c, dict)]
+    prior_measured: dict[str, float | None] = {}
+    results: list[CaseResult] = []
+    for c in cases:
+        if not isinstance(c, dict):
+            continue
+        r = run_case(function_under_test, c, prior_measured)
+        prior_measured[r.case_id] = r.measured if r.passed else None
+        results.append(r)
+    return results
 
 
 def _format_report(file_path: Path, results: list[CaseResult]) -> str:
     lines = [f"=== {file_path} ==="]
     for r in results:
         mark = "✅" if r.passed else "❌"
-        if r.measured is not None and r.expected is not None:
-            detail = (
-                f"measured={r.measured:.6g} expected={r.expected:.6g}"
-                + (f" tol={r.tolerance:.2g}" if r.tolerance is not None else "")
-            )
+        if r.measured is not None:
+            detail = f"measured={r.measured:.6g} {r.expected_summary}"
         else:
-            detail = r.reason
+            detail = r.expected_summary
+        if r.reason:
+            detail += f" — {r.reason}"
         lines.append(f"  {mark} {r.case_id} — {detail}")
+    passed = sum(1 for r in results if r.passed)
+    lines.append(f"  → {passed}/{len(results)} passed")
     return "\n".join(lines)
 
 

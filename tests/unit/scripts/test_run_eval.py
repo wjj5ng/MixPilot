@@ -128,7 +128,155 @@ class TestRunCase:
         }
         result = run_eval.run_case("mixpilot.dsp.rms.rms", case)
         assert not result.passed
-        assert "expected.value missing" in result.reason
+        assert "no recognized field" in result.reason
+
+    def test_value_range_passes(self) -> None:
+        case = {
+            "id": "lufs-range",
+            "input": {
+                "kind": "sine",
+                "sample_rate": 48000,
+                "frequency_hz": 1000,
+                "amplitude": 0.1,
+                "duration_seconds": 1.0,
+            },
+            "expected": {"value_range": [-25.0, -21.0]},
+        }
+        result = run_eval.run_case("mixpilot.dsp.lufs.lufs_integrated", case)
+        assert result.passed
+        assert result.measured is not None
+        assert -25.0 <= result.measured <= -21.0
+
+    def test_value_range_fails(self) -> None:
+        case = {
+            "id": "narrow-range",
+            "input": {
+                "kind": "sine",
+                "sample_rate": 48000,
+                "frequency_hz": 1000,
+                "amplitude": 0.1,
+                "duration_seconds": 1.0,
+            },
+            "expected": {"value_range": [0.0, 1.0]},  # 의도적으로 잘못된 범위
+        }
+        result = run_eval.run_case("mixpilot.dsp.lufs.lufs_integrated", case)
+        assert not result.passed
+        assert "outside range" in result.reason
+
+    def test_raises_passes(self) -> None:
+        case = {
+            "id": "lufs-too-short",
+            "input": {
+                "kind": "sine",
+                "sample_rate": 48000,
+                "frequency_hz": 1000,
+                "amplitude": 0.1,
+                "duration_seconds": 0.1,  # < 400ms
+            },
+            "expected": {"raises": "ValueError", "match": "too short"},
+        }
+        result = run_eval.run_case("mixpilot.dsp.lufs.lufs_integrated", case)
+        assert result.passed
+
+    def test_raises_wrong_exception_fails(self) -> None:
+        case = {
+            "id": "lufs-too-short-wrong-exc",
+            "input": {
+                "kind": "sine",
+                "sample_rate": 48000,
+                "frequency_hz": 1000,
+                "amplitude": 0.1,
+                "duration_seconds": 0.1,
+            },
+            "expected": {"raises": "RuntimeError"},
+        }
+        result = run_eval.run_case("mixpilot.dsp.lufs.lufs_integrated", case)
+        assert not result.passed
+        assert "ValueError" in result.reason
+
+    def test_raises_but_no_exception_fails(self) -> None:
+        case = {
+            "id": "silence-no-exc",
+            "input": {"kind": "silence", "sample_rate": 48000, "duration_seconds": 1.0},
+            "expected": {"raises": "ValueError"},
+        }
+        result = run_eval.run_case("mixpilot.dsp.lufs.lufs_integrated", case)
+        assert not result.passed
+        assert "no exception" in result.reason
+
+    def test_raises_match_mismatch_fails(self) -> None:
+        case = {
+            "id": "msg-mismatch",
+            "input": {
+                "kind": "sine",
+                "sample_rate": 48000,
+                "frequency_hz": 1000,
+                "amplitude": 0.1,
+                "duration_seconds": 0.1,
+            },
+            "expected": {"raises": "ValueError", "match": "completely wrong text"},
+        }
+        result = run_eval.run_case("mixpilot.dsp.lufs.lufs_integrated", case)
+        assert not result.passed
+        assert "doesn't match" in result.reason
+
+    def test_delta_from_passes(self) -> None:
+        # 두 케이스를 순서대로 실행: amp 0.1 ref, 그 다음 amp 0.2 delta.
+        ref_case = {
+            "id": "ref-amp0.1",
+            "input": {
+                "kind": "sine",
+                "sample_rate": 48000,
+                "frequency_hz": 1000,
+                "amplitude": 0.1,
+                "duration_seconds": 1.0,
+            },
+            "expected": {"value_range": [-25.0, -21.0]},
+        }
+        ref_result = run_eval.run_case("mixpilot.dsp.lufs.lufs_integrated", ref_case)
+        assert ref_result.passed and ref_result.measured is not None
+
+        delta_case = {
+            "id": "delta-amp0.2",
+            "input": {
+                "kind": "sine",
+                "sample_rate": 48000,
+                "frequency_hz": 1000,
+                "amplitude": 0.2,
+                "duration_seconds": 1.0,
+            },
+            "expected": {
+                "delta_from": "ref-amp0.1",
+                "delta_value": 6.0,
+                "tolerance_abs": 0.1,
+            },
+        }
+        delta_result = run_eval.run_case(
+            "mixpilot.dsp.lufs.lufs_integrated",
+            delta_case,
+            prior_measured={"ref-amp0.1": ref_result.measured},
+        )
+        assert delta_result.passed
+
+    def test_delta_from_missing_reference_fails(self) -> None:
+        case = {
+            "id": "needs-ref",
+            "input": {
+                "kind": "sine",
+                "sample_rate": 48000,
+                "frequency_hz": 1000,
+                "amplitude": 0.2,
+                "duration_seconds": 1.0,
+            },
+            "expected": {
+                "delta_from": "missing-id",
+                "delta_value": 6.0,
+                "tolerance_abs": 0.1,
+            },
+        }
+        result = run_eval.run_case("mixpilot.dsp.lufs.lufs_integrated", case)
+        assert not result.passed
+        assert "missing-id" in result.reason
 
 
 class TestRunYamlFile:
@@ -177,6 +325,16 @@ class TestMain:
             / "evals"
             / "cases"
             / "rms-baseline.yaml"
+        )
+        exit_code = run_eval.main([str(path)])
+        assert exit_code == 0
+
+    def test_main_passes_for_real_lufs_baseline(self) -> None:
+        path = (
+            Path(__file__).resolve().parents[3]
+            / "evals"
+            / "cases"
+            / "lufs-baseline.yaml"
         )
         exit_code = run_eval.main([str(path)])
         assert exit_code == 0
