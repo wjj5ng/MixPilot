@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -33,6 +34,7 @@ from typing import Any
 import numpy as np
 import yaml
 
+from mixpilot.dsp.feedback import FeedbackPeak, detect_peak_bins
 from mixpilot.dsp.lufs import lufs_integrated
 from mixpilot.dsp.peak import peak, true_peak
 from mixpilot.dsp.rms import rms
@@ -48,14 +50,42 @@ class CaseResult:
     reason: str = ""
 
 
+def _length_from_params(params: Mapping[str, Any]) -> int:
+    if "num_samples" in params:
+        return int(params["num_samples"])
+    sr = int(params["sample_rate"])
+    return int(sr * float(params["duration_seconds"]))
+
+
 def _generate_sine(params: Mapping[str, Any]) -> np.ndarray:
     sr = int(params["sample_rate"])
     freq = float(params["frequency_hz"])
     amp = float(params["amplitude"])
-    duration = float(params["duration_seconds"])
-    n = int(sr * duration)
+    n = _length_from_params(params)
     t = np.arange(n) / sr
     return (amp * np.sin(2 * np.pi * freq * t)).astype(np.float64)
+
+
+def _generate_sum_of_sines(params: Mapping[str, Any]) -> np.ndarray:
+    sr = int(params["sample_rate"])
+    freqs = params["frequencies_hz"]
+    amps = params["amplitudes"]
+    if len(freqs) != len(amps):
+        raise ValueError("frequencies_hz and amplitudes must have same length")
+    n = _length_from_params(params)
+    t = np.arange(n) / sr
+    signal = np.zeros(n, dtype=np.float64)
+    for f, a in zip(freqs, amps, strict=True):
+        signal += float(a) * np.sin(2 * np.pi * float(f) * t)
+    return signal
+
+
+def _generate_white_noise(params: Mapping[str, Any]) -> np.ndarray:
+    amp = float(params["amplitude"])
+    seed = int(params.get("seed", 0))
+    n = _length_from_params(params)
+    rng = np.random.default_rng(seed)
+    return (rng.standard_normal(n) * amp).astype(np.float64)
 
 
 def _generate_dc(params: Mapping[str, Any]) -> np.ndarray:
@@ -66,12 +96,7 @@ def _generate_dc(params: Mapping[str, Any]) -> np.ndarray:
 
 
 def _generate_silence(params: Mapping[str, Any]) -> np.ndarray:
-    if "num_samples" in params:
-        n = int(params["num_samples"])
-    else:
-        sr = int(params["sample_rate"])
-        n = int(sr * float(params["duration_seconds"]))
-    return np.zeros(n, dtype=np.float64)
+    return np.zeros(_length_from_params(params), dtype=np.float64)
 
 
 def _generate_impulse(params: Mapping[str, Any]) -> np.ndarray:
@@ -85,9 +110,11 @@ def _generate_impulse(params: Mapping[str, Any]) -> np.ndarray:
 
 _SIGNAL_GENERATORS: dict[str, Callable[[Mapping[str, Any]], np.ndarray]] = {
     "sine": _generate_sine,
+    "sum_of_sines": _generate_sum_of_sines,
     "dc": _generate_dc,
     "silence": _generate_silence,
     "impulse": _generate_impulse,
+    "white_noise": _generate_white_noise,
 }
 
 
@@ -380,12 +407,202 @@ def _run_multi_function_case(
     return results
 
 
+_NO_PEAK_NEAR_PATTERN = re.compile(
+    r"no peak near\s+(?P<freq>[\d.]+)\s*Hz(?:\s*\(±\s*(?P<tol>[\d.]+)\s*Hz\))?",
+    re.IGNORECASE,
+)
+
+
+def _eval_feedback_assertions(
+    peaks: list[FeedbackPeak], expected_spec: Mapping[str, Any]
+) -> list[tuple[str, bool, str, str]]:
+    """피드백 케이스의 어설션 평가.
+
+    Returns: (sub_id, passed, summary, reason) 리스트.
+    """
+    out: list[tuple[str, bool, str, str]] = []
+
+    if "result_count" in expected_spec:
+        target = int(expected_spec["result_count"])
+        passed = len(peaks) == target
+        out.append(
+            (
+                "result_count",
+                passed,
+                f"result_count={target}",
+                "" if passed else f"got {len(peaks)} peaks",
+            )
+        )
+
+    if "min_result_count" in expected_spec:
+        target = int(expected_spec["min_result_count"])
+        passed = len(peaks) >= target
+        out.append(
+            (
+                "min_result_count",
+                passed,
+                f"min_result_count={target}",
+                "" if passed else f"got {len(peaks)} peaks",
+            )
+        )
+
+    if "max_result_count" in expected_spec:
+        target = int(expected_spec["max_result_count"])
+        passed = len(peaks) <= target
+        out.append(
+            (
+                "max_result_count",
+                passed,
+                f"max_result_count={target}",
+                "" if passed else f"got {len(peaks)} peaks",
+            )
+        )
+
+    if "strongest_frequency_hz" in expected_spec:
+        target_freq = float(expected_spec["strongest_frequency_hz"])
+        tol = float(expected_spec.get("strongest_frequency_tolerance_hz", 50.0))
+        summary = f"strongest_freq={target_freq}±{tol}Hz"
+        if not peaks:
+            out.append(("strongest_frequency_hz", False, summary, "no peaks detected"))
+        else:
+            strongest = max(peaks, key=lambda p: p.magnitude_dbfs)
+            passed = abs(strongest.frequency_hz - target_freq) <= tol
+            actual = f"{strongest.frequency_hz:.1f}"
+            out.append(
+                (
+                    "strongest_frequency_hz",
+                    passed,
+                    summary,
+                    "" if passed else f"got strongest at {actual} Hz",
+                )
+            )
+
+    if "frequencies_hz" in expected_spec:
+        targets = [float(f) for f in expected_spec["frequencies_hz"]]
+        tol = float(expected_spec.get("frequency_tolerance_hz", 50.0))
+        summary = f"frequencies={targets}±{tol}Hz"
+        peak_freqs = [p.frequency_hz for p in peaks]
+        missing = [
+            f for f in targets if not any(abs(pf - f) <= tol for pf in peak_freqs)
+        ]
+        passed = not missing
+        out.append(
+            (
+                "frequencies_hz",
+                passed,
+                summary,
+                "" if passed else f"missing peaks near {missing} Hz",
+            )
+        )
+
+    if "assert" in expected_spec:
+        assertion = str(expected_spec["assert"])
+        m = _NO_PEAK_NEAR_PATTERN.search(assertion)
+        if m:
+            target = float(m.group("freq"))
+            tol = float(m.group("tol") or 50.0)
+            summary = f'assert "no peak near {target} Hz (±{tol})"'
+            offenders = [
+                p.frequency_hz for p in peaks if abs(p.frequency_hz - target) <= tol
+            ]
+            passed = not offenders
+            out.append(
+                (
+                    "assert",
+                    passed,
+                    summary,
+                    "" if passed else f"unexpected peaks near {offenders} Hz",
+                )
+            )
+        else:
+            out.append(
+                (
+                    "assert",
+                    False,
+                    f"assert {assertion!r}",
+                    f"unknown assert phrasing: {assertion!r}",
+                )
+            )
+
+    return out
+
+
+def _run_feedback_case(case: Mapping[str, Any]) -> list[CaseResult]:
+    """단일 feedback 케이스 → 어설션별 CaseResult."""
+    case_id = str(case.get("id", "<unnamed>"))
+    input_spec = case.get("input", {})
+    expected_spec = case.get("expected", {})
+    params = case.get("params", {}) or {}
+    fn_path = "mixpilot.dsp.feedback.detect_peak_bins"
+
+    kind = input_spec.get("kind")
+    if kind not in _SIGNAL_GENERATORS:
+        return [
+            CaseResult(
+                case_id=case_id,
+                function_under_test=fn_path,
+                passed=False,
+                measured=None,
+                expected_summary="<n/a>",
+                reason=f"unsupported signal kind: {kind!r}",
+            )
+        ]
+
+    samples = _SIGNAL_GENERATORS[kind](input_spec)
+    sample_rate = int(input_spec["sample_rate"])
+    kwargs: dict[str, Any] = {}
+    if "min_frequency_hz" in params:
+        kwargs["min_frequency_hz"] = float(params["min_frequency_hz"])
+    if "max_frequency_hz" in params:
+        kwargs["max_frequency_hz"] = float(params["max_frequency_hz"])
+    if "pnr_threshold_db" in params:
+        kwargs["pnr_threshold_db"] = float(params["pnr_threshold_db"])
+    if "neighbor_band_hz" in params:
+        kwargs["neighbor_band_hz"] = float(params["neighbor_band_hz"])
+
+    peaks = detect_peak_bins(samples, sample_rate, **kwargs)
+    assertions = _eval_feedback_assertions(peaks, expected_spec)
+
+    if not assertions:
+        return [
+            CaseResult(
+                case_id=case_id,
+                function_under_test=fn_path,
+                passed=False,
+                measured=float(len(peaks)),
+                expected_summary="<n/a>",
+                reason="expected has no recognized feedback assertion keys",
+            )
+        ]
+
+    return [
+        CaseResult(
+            case_id=f"{case_id}::{sub_id}",
+            function_under_test=fn_path,
+            passed=passed,
+            measured=float(len(peaks)),
+            expected_summary=summary,
+            reason=reason,
+        )
+        for sub_id, passed, summary, reason in assertions
+    ]
+
+
 def run_yaml_file(path: Path) -> list[CaseResult]:
     """단일 eval YAML을 실행해 케이스 결과 리스트 반환."""
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     cases = data.get("cases", []) or []
 
-    # 멀티 함수 YAML(`functions_under_test`) 우선 처리.
+    # 피드백 YAML — list[FeedbackPeak] 결과의 특수 어설션 처리.
+    if data.get("function_under_test") == "mixpilot.dsp.feedback.detect_peak_bins":
+        results: list[CaseResult] = []
+        for c in cases:
+            if not isinstance(c, dict):
+                continue
+            results.extend(_run_feedback_case(c))
+        return results
+
+    # 멀티 함수 YAML(`functions_under_test`) 처리.
     if "functions_under_test" in data:
         cached_measurements: dict[str, dict[str, float]] = {}
         results: list[CaseResult] = []

@@ -385,6 +385,134 @@ class TestMultiFunctionCase:
         assert "no recognized assertion keys" in results[0].reason
 
 
+class TestFeedbackCase:
+    def test_silence_zero_peaks(self) -> None:
+        case = {
+            "id": "fb-silence",
+            "input": {"kind": "silence", "sample_rate": 48000, "num_samples": 1024},
+            "expected": {"result_count": 0},
+        }
+        results = run_eval._run_feedback_case(case)
+        assert len(results) == 1
+        assert results[0].passed
+
+    def test_pure_tone_strongest_frequency(self) -> None:
+        case = {
+            "id": "fb-pure",
+            "input": {
+                "kind": "sine",
+                "sample_rate": 48000,
+                "frequency_hz": 1000,
+                "amplitude": 0.5,
+                "num_samples": 1024,
+            },
+            "expected": {
+                "min_result_count": 1,
+                "strongest_frequency_hz": 1000.0,
+                "strongest_frequency_tolerance_hz": 50.0,
+            },
+        }
+        results = run_eval._run_feedback_case(case)
+        assert len(results) == 2
+        assert all(r.passed for r in results)
+
+    def test_sum_of_sines_two_peaks(self) -> None:
+        case = {
+            "id": "fb-two",
+            "input": {
+                "kind": "sum_of_sines",
+                "sample_rate": 48000,
+                "frequencies_hz": [500, 3000],
+                "amplitudes": [0.5, 0.5],
+                "num_samples": 1024,
+            },
+            "expected": {
+                "min_result_count": 2,
+                "frequencies_hz": [500, 3000],
+                "frequency_tolerance_hz": 50.0,
+            },
+        }
+        results = run_eval._run_feedback_case(case)
+        assert all(r.passed for r in results)
+
+    def test_white_noise_few_peaks(self) -> None:
+        case = {
+            "id": "fb-noise",
+            "input": {
+                "kind": "white_noise",
+                "sample_rate": 48000,
+                "seed": 42,
+                "amplitude": 0.1,
+                "num_samples": 1024,
+            },
+            "expected": {"max_result_count": 5},
+        }
+        results = run_eval._run_feedback_case(case)
+        assert results[0].passed
+
+    def test_params_min_frequency_filters(self) -> None:
+        # 80 Hz sine은 min_frequency_hz=100으로 필터링되어 빠짐.
+        case = {
+            "id": "fb-low",
+            "input": {
+                "kind": "sine",
+                "sample_rate": 48000,
+                "frequency_hz": 80,
+                "amplitude": 0.5,
+                "num_samples": 1024,
+            },
+            "params": {"min_frequency_hz": 100.0},
+            "expected": {"assert": "no peak near 80 Hz"},
+        }
+        results = run_eval._run_feedback_case(case)
+        assert results[0].passed
+
+    def test_unknown_assert_phrasing_fails(self) -> None:
+        case = {
+            "id": "fb-bad-assert",
+            "input": {"kind": "silence", "sample_rate": 48000, "num_samples": 1024},
+            "expected": {"assert": "the quick brown fox"},
+        }
+        results = run_eval._run_feedback_case(case)
+        assert not results[0].passed
+        assert "unknown assert phrasing" in results[0].reason
+
+
+class TestSignalGeneratorsExtended:
+    def test_sine_with_num_samples(self) -> None:
+        signal = run_eval._generate_sine(
+            {
+                "sample_rate": 48000,
+                "frequency_hz": 1000,
+                "amplitude": 0.5,
+                "num_samples": 1024,
+            }
+        )
+        assert signal.shape == (1024,)
+
+    def test_sum_of_sines_length_mismatch_raises(self) -> None:
+        with pytest.raises(ValueError, match="same length"):
+            run_eval._generate_sum_of_sines(
+                {
+                    "sample_rate": 48000,
+                    "frequencies_hz": [500],
+                    "amplitudes": [0.5, 0.5],
+                    "num_samples": 1024,
+                }
+            )
+
+    def test_white_noise_deterministic_with_seed(self) -> None:
+        params = {
+            "sample_rate": 48000,
+            "amplitude": 0.1,
+            "seed": 42,
+            "num_samples": 1024,
+        }
+        a = run_eval._generate_white_noise(params)
+        b = run_eval._generate_white_noise(params)
+        np.testing.assert_array_equal(a, b)
+
+
 class TestMain:
     def test_main_passes_for_real_rms_baseline(self) -> None:
         path = (
@@ -412,6 +540,16 @@ class TestMain:
             / "evals"
             / "cases"
             / "peak-baseline.yaml"
+        )
+        exit_code = run_eval.main([str(path)])
+        assert exit_code == 0
+
+    def test_main_passes_for_real_feedback_baseline(self) -> None:
+        path = (
+            Path(__file__).resolve().parents[3]
+            / "evals"
+            / "cases"
+            / "feedback-baseline.yaml"
         )
         exit_code = run_eval.main([str(path)])
         assert exit_code == 0
