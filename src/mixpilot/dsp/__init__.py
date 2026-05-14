@@ -11,6 +11,7 @@ from .feedback import (
     FeedbackPeak,
     detect_peak_bins,
 )
+from .lra import NO_LRA, lra
 from .lufs import (
     MIN_DURATION_SECONDS,
     SILENCE_FLOOR_LUFS,
@@ -31,12 +32,14 @@ __all__ = [
     "DEFAULT_PNR_THRESHOLD_DB",
     "DEFAULT_TRUE_PEAK_OVERSAMPLE",
     "MIN_DURATION_SECONDS",
+    "NO_LRA",
     "SILENCE_FLOOR_DBFS",
     "SILENCE_FLOOR_LUFS",
     "FeedbackPeak",
     "detect_peak_bins",
     "dynamic_range_channels",
     "dynamic_range_db",
+    "lra",
     "lufs_channels",
     "lufs_integrated",
     "peak",
