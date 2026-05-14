@@ -52,6 +52,32 @@ class TestComputeMeterPayload:
         assert ch["category"] == "vocal"
         assert ch["rms_dbfs"] == -120.0
         assert ch["peak_dbfs"] == -120.0
+        # lra_by_channel 미주입 시 null.
+        assert ch["lra_lu"] is None
+
+    def test_lra_cache_included_when_provided(self) -> None:
+        vocal_ch = _ch(
+            np.zeros(100, dtype=np.float64),
+            channel_id=3,
+            label="찬양 보컬 1",
+            category=SourceCategory.VOCAL,
+        )
+        instrument_ch = _ch(
+            np.zeros(100, dtype=np.float64),
+            channel_id=7,
+            label="기타",
+            category=SourceCategory.INSTRUMENT,
+        )
+        payload = _compute_meter_payload(
+            [vocal_ch, instrument_ch],
+            capture_seq=99,
+            lra_by_channel={3: 12.5},  # ch3만 캐시됨, ch7은 미평가.
+        )
+        ch3, ch7 = payload["channels"]
+        assert ch3["channel"] == 3
+        assert ch3["lra_lu"] == 12.5
+        assert ch7["channel"] == 7
+        assert ch7["lra_lu"] is None
 
     def test_multi_channel_independent(self) -> None:
         sr = 48000

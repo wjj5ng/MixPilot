@@ -52,6 +52,16 @@
     return "#6fcf97";
   }
 
+  /** LRA(LU) → 색상.
+   *  < 5 LU: 압축 매우 강함(적), 5~15 정상(녹), > 15 다이내믹 큼(황).
+   *  null/undefined이면 회색(미평가). */
+  function lraColor(lu: number | null | undefined): string {
+    if (lu === null || lu === undefined) return "#5a6270";
+    if (lu < 5) return "#ff7676";
+    if (lu > 15) return "#ffb547";
+    return "#6fcf97";
+  }
+
   /** 해당 채널의 hold dBFS, 없으면 현재 peak로 폴백. */
   function holdDbfs(ch: ChannelMeter): number {
     return holds.get(ch.channel)?.dbfs ?? ch.peak_dbfs;
@@ -91,6 +101,11 @@
           <div class="meter-values">
             <span class="meter-rms-val">RMS {ch.rms_dbfs.toFixed(1)}</span>
             <span class="meter-peak-val">Peak {ch.peak_dbfs.toFixed(1)}</span>
+            <span class="meter-lra-val" style="color: {lraColor(ch.lra_lu)};">
+              LRA {ch.lra_lu === null || ch.lra_lu === undefined
+                ? "—"
+                : `${ch.lra_lu.toFixed(1)} LU`}
+            </span>
           </div>
         </div>
       {/each}
@@ -194,6 +209,11 @@
   }
   .meter-peak-val {
     color: #c8cdd6;
+  }
+  .meter-lra-val {
+    font-variant-numeric: tabular-nums;
+    min-width: 6.5rem;
+    text-align: right;
   }
   .scale {
     display: flex;

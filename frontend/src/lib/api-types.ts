@@ -208,7 +208,7 @@ export interface components {
         };
         /**
          * ChannelMeter
-         * @description 단일 채널의 미터 스냅샷 — 라벨·카테고리 + RMS·peak를 dBFS로.
+         * @description 단일 채널의 미터 스냅샷 — 라벨·카테고리 + RMS·peak + LRA(누적).
          */
         ChannelMeter: {
             /** Channel */
@@ -221,6 +221,8 @@ export interface components {
             rms_dbfs: number;
             /** Peak Dbfs */
             peak_dbfs: number;
+            /** Lra Lu */
+            lra_lu?: number | null;
         };
         /**
          * ControlResponse

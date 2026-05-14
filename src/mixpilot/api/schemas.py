@@ -90,13 +90,15 @@ class AuditLogResponse(BaseModel):
 
 
 class ChannelMeter(BaseModel):
-    """단일 채널의 미터 스냅샷 — 라벨·카테고리 + RMS·peak를 dBFS로."""
+    """단일 채널의 미터 스냅샷 — 라벨·카테고리 + RMS·peak + LRA(누적)."""
 
     channel: int
     label: str
     category: str
     rms_dbfs: float
     peak_dbfs: float
+    lra_lu: float | None = None
+    """가장 최근 평가된 LRA(LU). 미평가/비활성이면 null."""
 
 
 class MeterSnapshotEvent(BaseModel):

@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from mixpilot.domain import Channel, Recommendation, RecommendationKind
+from mixpilot.domain import Channel, Recommendation, RecommendationKind, Source
 from mixpilot.dsp.lra import NO_LRA, lra
 
 DEFAULT_LOW_THRESHOLD_LU: float = 5.0
@@ -35,6 +35,55 @@ DEFAULT_HIGH_THRESHOLD_LU: float = 15.0
 
 DEFAULT_SILENCE_THRESHOLD_LU: float = 0.1
 """LRA가 이 미만이면 무음/단조 — 평가 스킵."""
+
+
+def evaluate_lra_value(
+    source: Source,
+    lra_value: float,
+    *,
+    low_threshold_lu: float = DEFAULT_LOW_THRESHOLD_LU,
+    high_threshold_lu: float = DEFAULT_HIGH_THRESHOLD_LU,
+    silence_threshold_lu: float = DEFAULT_SILENCE_THRESHOLD_LU,
+) -> Recommendation | None:
+    """이미 계산된 LRA 값으로 추천 생성 — 중복 계산 회피용.
+
+    main.py 처리 루프가 LRA를 한 번 계산해 meter publish에도 사용하고
+    동일 값을 본 함수에 넘겨 추천 평가도 수행 — DSP 두 번 호출 방지.
+
+    Args / Returns / Raises: 임계 동작은 `evaluate_channel_lra`와 동일.
+    """
+    if low_threshold_lu >= high_threshold_lu:
+        raise ValueError(
+            f"low_threshold_lu ({low_threshold_lu}) must be < "
+            f"high_threshold_lu ({high_threshold_lu})"
+        )
+    if lra_value <= NO_LRA or lra_value < silence_threshold_lu:
+        return None
+    if low_threshold_lu <= lra_value <= high_threshold_lu:
+        return None
+
+    label = source.label or source.category.value
+    channel_id = int(source.channel)
+    if lra_value < low_threshold_lu:
+        margin = low_threshold_lu - lra_value
+        direction = "압축 매우 강함"
+        detail = f"LRA {lra_value:.1f} LU (임계 {low_threshold_lu:.1f} 미만)"
+    else:
+        margin = lra_value - high_threshold_lu
+        direction = "다이내믹 폭 큼"
+        detail = f"LRA {lra_value:.1f} LU (임계 {high_threshold_lu:.1f} 초과)"
+    confidence = min(1.0, margin / 5.0)
+    return Recommendation(
+        target=source,
+        kind=RecommendationKind.INFO,
+        params={
+            "lra_lu": lra_value,
+            "low_threshold_lu": low_threshold_lu,
+            "high_threshold_lu": high_threshold_lu,
+        },
+        confidence=confidence,
+        reason=f"ch{channel_id:02d} {label} {direction} — {detail}",
+    )
 
 
 def evaluate_channel_lra(
@@ -58,40 +107,15 @@ def evaluate_channel_lra(
     Raises:
         ValueError: 임계가 비합리적(low >= high)이거나 sample_rate가 48000이 아닐 때.
     """
-    if low_threshold_lu >= high_threshold_lu:
-        raise ValueError(
-            f"low_threshold_lu ({low_threshold_lu}) must be < "
-            f"high_threshold_lu ({high_threshold_lu})"
-        )
-
+    # LRA를 직접 계산 → evaluate_lra_value로 위임. main.py가 캐시 라우트를
+    # 사용할 때는 evaluate_lra_value를 직접 호출해 중복 계산을 피한다.
     lra_value = lra(channel.samples, channel.format.sample_rate)
-    if lra_value <= NO_LRA or lra_value < silence_threshold_lu:
-        return None
-    if low_threshold_lu <= lra_value <= high_threshold_lu:
-        return None
-
-    label = channel.source.label or channel.source.category.value
-    channel_id = int(channel.source.channel)
-    if lra_value < low_threshold_lu:
-        margin = low_threshold_lu - lra_value
-        direction = "압축 매우 강함"
-        detail = f"LRA {lra_value:.1f} LU (임계 {low_threshold_lu:.1f} 미만)"
-    else:
-        margin = lra_value - high_threshold_lu
-        direction = "다이내믹 폭 큼"
-        detail = f"LRA {lra_value:.1f} LU (임계 {high_threshold_lu:.1f} 초과)"
-
-    confidence = min(1.0, margin / 5.0)
-    return Recommendation(
-        target=channel.source,
-        kind=RecommendationKind.INFO,
-        params={
-            "lra_lu": lra_value,
-            "low_threshold_lu": low_threshold_lu,
-            "high_threshold_lu": high_threshold_lu,
-        },
-        confidence=confidence,
-        reason=f"ch{channel_id:02d} {label} {direction} — {detail}",
+    return evaluate_lra_value(
+        channel.source,
+        lra_value,
+        low_threshold_lu=low_threshold_lu,
+        high_threshold_lu=high_threshold_lu,
+        silence_threshold_lu=silence_threshold_lu,
     )
 
 

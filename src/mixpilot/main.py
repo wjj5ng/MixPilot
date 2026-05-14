@@ -54,6 +54,7 @@ from mixpilot.dsp import (
     to_dbfs,
 )
 from mixpilot.dsp.lra import MIN_DURATION_SECONDS as LRA_MIN_DURATION_SECONDS
+from mixpilot.dsp.lra import lra as compute_lra
 from mixpilot.infra.audio_capture import SoundDeviceAudioSource
 from mixpilot.infra.audit import AuditLogger
 from mixpilot.infra.channel_map import YamlChannelMetadata
@@ -62,10 +63,10 @@ from mixpilot.infra.synthetic_audio import SyntheticAudioSource
 from mixpilot.rules import (
     evaluate_all_channels,
     evaluate_all_channels_dynamic_range,
-    evaluate_all_channels_lra,
     evaluate_all_channels_lufs,
     evaluate_all_channels_peak,
     evaluate_all_feedback,
+    evaluate_lra_value,
 )
 from mixpilot.runtime import ActionHistory, FeedbackDetector, RollingBuffer
 
@@ -148,15 +149,21 @@ class MeterBroker:
 
 
 def _compute_meter_payload(
-    channels: list[Channel], capture_seq: int
+    channels: list[Channel],
+    capture_seq: int,
+    *,
+    lra_by_channel: dict[int, float] | None = None,
 ) -> dict[str, Any]:
-    """채널별 RMS·peak dBFS + 라벨/카테고리를 SSE 페이로드로 직렬화.
+    """채널별 RMS·peak dBFS + 라벨/카테고리 + (옵션) LRA를 SSE 페이로드로 직렬화.
 
-    채널 순서·1-based ID는 입력의 `channel.source.channel`을 그대로 사용.
+    LRA는 long-window 메트릭이라 매 publish마다 다시 계산하지 않음 — 호출자가
+    가장 최근에 계산한 값을 `lra_by_channel`로 주입. 키는 1-based 채널 ID.
+    아직 평가가 안 된 채널은 None(=`lra_lu: null`)으로 전송.
 
     Args:
         channels: `_split_signal_to_channels` 결과 — source 정보 포함.
         capture_seq: 원천 Signal의 단조 시퀀스.
+        lra_by_channel: 채널 ID → LRA(LU) 캐시. None이면 모든 채널 lra_lu=null.
     """
     if not channels:
         return {"capture_seq": int(capture_seq), "channels": []}
@@ -168,13 +175,17 @@ def _compute_meter_payload(
 
     payload_channels: list[dict[str, Any]] = []
     for idx, ch in enumerate(channels):
+        ch_id = int(ch.source.channel)
         payload_channels.append(
             {
-                "channel": int(ch.source.channel),
+                "channel": ch_id,
                 "label": ch.source.label,
                 "category": ch.source.category.value,
                 "rms_dbfs": to_dbfs(float(rms_lin[idx])),
                 "peak_dbfs": to_dbfs(float(peak_lin[idx])),
+                "lra_lu": (
+                    lra_by_channel.get(ch_id) if lra_by_channel else None
+                ),
             }
         )
     return {"capture_seq": int(capture_seq), "channels": payload_channels}
@@ -299,6 +310,9 @@ async def _processing_loop(
     feedback_enabled = feedback_detectors is not None
     lra_enabled = lra_buffer is not None
     meter_enabled = meter_broker is not None
+    # 채널 → 최신 LRA 값 캐시. publish cadence(~9 Hz) > LRA eval cadence(~0.3 Hz)이므로
+    # 매 publish에 최신 LRA를 포함하려면 이전 평가값을 보관해야 한다.
+    latest_lra: dict[int, float] = {}
     frame_count = 0
     try:
         async for signal in audio.stream():
@@ -381,14 +395,26 @@ async def _processing_loop(
                     lra_channels = _split_signal_to_channels(
                         buffered_signal, sources_by_id
                     )
-                    recommendations.extend(
-                        evaluate_all_channels_lra(
-                            lra_channels,
+                    # LRA를 한 번만 계산 — meter 캐시·룰 평가 모두 같은 값 사용.
+                    for lra_ch in lra_channels:
+                        try:
+                            value = compute_lra(
+                                lra_ch.samples, lra_ch.format.sample_rate
+                            )
+                        except ValueError:
+                            # 채널 신호가 충분하지 않거나 무효 — 캐시 미반영.
+                            continue
+                        ch_id = int(lra_ch.source.channel)
+                        latest_lra[ch_id] = value
+                        rec = evaluate_lra_value(
+                            lra_ch.source,
+                            value,
                             low_threshold_lu=lra_low_threshold_lu,
                             high_threshold_lu=lra_high_threshold_lu,
                             silence_threshold_lu=lra_silence_threshold_lu,
                         )
-                    )
+                        if rec is not None:
+                            recommendations.append(rec)
 
             if (
                 meter_enabled
@@ -396,7 +422,11 @@ async def _processing_loop(
             ):
                 assert meter_broker is not None
                 meter_broker.publish(
-                    _compute_meter_payload(channels, signal.capture_seq)
+                    _compute_meter_payload(
+                        channels,
+                        signal.capture_seq,
+                        lra_by_channel=latest_lra if lra_enabled else None,
+                    )
                 )
 
             for rec in recommendations:
