@@ -7,10 +7,19 @@ MixPilot의 모든 주목할 만한 변경 사항을 기록합니다.
 
 ## [Unreleased]
 
+### Added (Unreleased)
+
+- Stereo phase correlation 룰 + 미터 표시 + 채널맵 stereo pair 편집.
+  - 채널맵 yaml에 `stereo_pair_with` 필드 — 한쪽만 명시해도 자동 reverse.
+  - `rules.phase`: 페어 채널의 correlation이 임계(기본 -0.3) 이하면 INFO.
+  - 미터 페이로드에 `phase_with_pair`, `stereo_pair_with` 포함 → 미터 row 옆에
+    `↔ chXX  φ+0.97` 형식으로 표시. < -0.3 적/정상 녹/> 0.5 황 색상.
+  - 룰 토글에 phase 항목 자동 포함.
+  - PhaseAnalysisConfig — enabled / warn_threshold.
+
 ### 향후 후보
 
-- service 도중 룰 on/off 토글 (per-rule UI 컨트롤)
-- L/R 채널 phase correlation DSP
+- service 도중 룰 on/off 토글 (per-rule UI 컨트롤) — 0.1.0에 포함됨, 이 항목 제거.
 - 프로덕션 배포 아티팩트 (Dockerfile + systemd unit)
 - 채널맵 UI 편집 변경의 라이브 처리 루프 즉시 반영
 - ITU-R BS.1770-4 conformance signals로 LUFS·LRA 정확값 검증

@@ -136,6 +136,60 @@ channels:
         sources = list(asyncio.run(meta2.get_all_channels()))
         assert {int(s.channel) for s in sources} == {1, 5}
 
+    def test_stereo_pair_with_loads_and_auto_reverses(self, tmp_path: Path) -> None:
+        # ch3에만 pair_with=4 명시 → ch4의 pair도 자동으로 3.
+        p = tmp_path / "channels.yaml"
+        p.write_text(
+            "channels:\n"
+            "  - id: 3\n    category: vocal\n    stereo_pair_with: 4\n"
+            "  - id: 4\n    category: vocal\n",
+            encoding="utf-8",
+        )
+        meta = YamlChannelMetadata(p)
+        sources = {int(s.channel): s for s in asyncio.run(meta.get_all_channels())}
+        assert sources[3].stereo_pair_with == 4
+        assert sources[4].stereo_pair_with == 3  # auto-reversed.
+
+    def test_update_channel_sets_pair_both_sides(self, tmp_path: Path) -> None:
+        p = tmp_path / "channels.yaml"
+        p.write_text(
+            "channels:\n"
+            "  - id: 5\n    category: instrument\n"
+            "  - id: 6\n    category: instrument\n",
+            encoding="utf-8",
+        )
+        meta = YamlChannelMetadata(p)
+        asyncio.run(meta.get_all_channels())
+        meta.update_channel(
+            5,
+            category=SourceCategory.INSTRUMENT,
+            label="overhead L",
+            stereo_pair_with=6,
+        )
+        meta2 = YamlChannelMetadata(p)
+        sources = {int(s.channel): s for s in asyncio.run(meta2.get_all_channels())}
+        assert sources[5].stereo_pair_with == 6
+        assert sources[6].stereo_pair_with == 5  # 양방향 동기.
+
+    def test_update_channel_clears_old_pair(self, tmp_path: Path) -> None:
+        # ch1↔ch2 pair였다가 ch1을 mono로 갱신 → ch2의 pair도 None.
+        p = tmp_path / "channels.yaml"
+        p.write_text(
+            "channels:\n"
+            "  - id: 1\n    category: vocal\n    stereo_pair_with: 2\n"
+            "  - id: 2\n    category: vocal\n",
+            encoding="utf-8",
+        )
+        meta = YamlChannelMetadata(p)
+        asyncio.run(meta.get_all_channels())
+        meta.update_channel(
+            1, category=SourceCategory.VOCAL, label="solo", stereo_pair_with=None
+        )
+        meta2 = YamlChannelMetadata(p)
+        sources = {int(s.channel): s for s in asyncio.run(meta2.get_all_channels())}
+        assert sources[1].stereo_pair_with is None
+        assert sources[2].stereo_pair_with is None  # 끊어짐.
+
     def test_update_channel_atomic_no_tmp_leak(self, tmp_path: Path) -> None:
         # .tmp 파일이 정상 처리 후 남지 않아야 함.
         p = tmp_path / "channels.yaml"

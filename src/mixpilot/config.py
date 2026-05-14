@@ -151,6 +151,19 @@ class LraAnalysisConfig(BaseModel):
     """이 미만은 무음/단조로 간주 — 평가 스킵 (NO_LRA 케이스)."""
 
 
+class PhaseAnalysisConfig(BaseModel):
+    """Stereo phase correlation 룰 설정 — 모노 다운믹스 안전성.
+
+    `stereo_pair_with`가 설정된 채널 페어에 대해 매 프레임 평가.
+    """
+
+    enabled: bool = False
+    """Phase correlation 룰 활성화. 디폴트 off."""
+
+    warn_threshold: float = Field(default=-0.3, ge=-1.0, le=0.0)
+    """이 이하 correlation이면 INFO 발화. 음수 (- 1.0이 완전 역상)."""
+
+
 class MeterStreamConfig(BaseModel):
     """라이브 미터 스트림(`/meters` SSE) 설정.
 
@@ -273,6 +286,7 @@ class Settings(BaseSettings):
         default_factory=DynamicRangeAnalysisConfig
     )
     lra_analysis: LraAnalysisConfig = Field(default_factory=LraAnalysisConfig)
+    phase_analysis: PhaseAnalysisConfig = Field(default_factory=PhaseAnalysisConfig)
     meter_stream: MeterStreamConfig = Field(default_factory=MeterStreamConfig)
 
     dev_cors_enabled: bool = False

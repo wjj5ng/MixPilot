@@ -78,6 +78,15 @@
   // 표시용 옥타브 라벨 (백엔드의 OCTAVE_CENTERS_HZ와 동일 순서).
   const OCTAVE_LABELS = ["125", "250", "500", "1k", "2k", "4k", "8k", "16k"];
 
+  /** Phase correlation [-1, +1] → 색상.
+   *  < -0.3: 위험(적), -0.3~0.5: 정상(녹), > 0.5: 거의 모노(황). null=회색. */
+  function phaseColor(corr: number | null | undefined): string {
+    if (corr === null || corr === undefined) return "#5a6270";
+    if (corr < -0.3) return "#ff7676";
+    if (corr > 0.5) return "#ffb547";
+    return "#6fcf97";
+  }
+
   /** 해당 채널의 hold dBFS, 없으면 현재 peak로 폴백. */
   function holdDbfs(ch: ChannelMeter): number {
     return holds.get(ch.channel)?.dbfs ?? ch.peak_dbfs;
@@ -122,6 +131,13 @@
                 ? "—"
                 : `${ch.lra_lu.toFixed(1)} LU`}
             </span>
+            {#if ch.stereo_pair_with}
+              <span class="meter-phase-val" style="color: {phaseColor(ch.phase_with_pair)};">
+                ↔{String(ch.stereo_pair_with).padStart(2, "0")} φ{ch.phase_with_pair === null || ch.phase_with_pair === undefined
+                  ? "—"
+                  : (ch.phase_with_pair >= 0 ? "+" : "") + ch.phase_with_pair.toFixed(2)}
+              </span>
+            {/if}
           </div>
           <div class="meter-spectrum" role="img" aria-label="옥타브 스펙트럼">
             {#each ch.octave_bands_dbfs ?? [] as bandDb, i (i)}
@@ -277,6 +293,13 @@
     font-variant-numeric: tabular-nums;
     min-width: 6.5rem;
     text-align: right;
+  }
+  .meter-phase-val {
+    font-variant-numeric: tabular-nums;
+    min-width: 6.5rem;
+    text-align: right;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.75rem;
   }
   .scale {
     display: flex;

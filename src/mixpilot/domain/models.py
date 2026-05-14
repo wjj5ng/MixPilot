@@ -85,11 +85,15 @@ class Source:
 
     채널 번호와 카테고리는 외부 매핑(config/channels.yaml)에서 부여된다.
     label은 M32 스크리블 스트립 라벨 — 정보 용도.
+
+    `stereo_pair_with`는 스테레오 페어의 *상대* 채널 번호. None이면 mono.
+    Phase correlation 룰·미터가 이 정보를 사용해 모노 다운믹스 안전성을 평가.
     """
 
     channel: ChannelId
     category: SourceCategory
     label: str = ""
+    stereo_pair_with: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

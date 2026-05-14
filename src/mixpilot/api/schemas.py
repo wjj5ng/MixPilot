@@ -25,6 +25,7 @@ class HealthResponse(BaseModel):
     peak_analysis_enabled: bool
     dynamic_range_analysis_enabled: bool
     lra_analysis_enabled: bool
+    phase_analysis_enabled: bool
     meter_stream_enabled: bool
 
 
@@ -95,6 +96,7 @@ class ChannelMapEntry(BaseModel):
     channel: int
     category: str
     label: str
+    stereo_pair_with: int | None = None
 
 
 class ChannelMapResponse(BaseModel):
@@ -104,10 +106,11 @@ class ChannelMapResponse(BaseModel):
 
 
 class ChannelMapUpdateRequest(BaseModel):
-    """`PUT /channels/{id}` 요청 body — 카테고리·라벨 갱신."""
+    """`PUT /channels/{id}` 요청 body — 카테고리·라벨·stereo 페어 갱신."""
 
     category: str
     label: str = ""
+    stereo_pair_with: int | None = None
 
 
 class RuleState(BaseModel):
@@ -142,6 +145,12 @@ class ChannelMeter(BaseModel):
 
     octave_bands_dbfs: list[float] = []
     """현재 프레임의 옥타브 밴드 레벨 (8개: 125·250·500·1k·2k·4k·8k·16k Hz)."""
+
+    stereo_pair_with: int | None = None
+    """이 채널의 stereo 페어 채널 번호. None이면 mono."""
+
+    phase_with_pair: float | None = None
+    """페어와의 phase correlation [-1, +1]. 페어 없음·미평가면 null."""
 
 
 class MeterSnapshotEvent(BaseModel):

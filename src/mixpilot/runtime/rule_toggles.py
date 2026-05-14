@@ -29,6 +29,7 @@ RULE_NAMES: tuple[str, ...] = (
     "feedback",
     "dynamic_range",
     "lra",
+    "phase",
 )
 
 
@@ -55,6 +56,7 @@ class RuleToggles:
         feedback: bool = False,
         dynamic_range: bool = False,
         lra: bool = False,
+        phase: bool = False,
     ) -> RuleToggles:
         """config의 enabled 플래그를 명시 인자로 받아 인스턴스 생성.
 
@@ -69,6 +71,7 @@ class RuleToggles:
                 "feedback": feedback,
                 "dynamic_range": dynamic_range,
                 "lra": lra,
+                "phase": phase,
             }
         )
 

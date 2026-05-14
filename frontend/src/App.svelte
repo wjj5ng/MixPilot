@@ -112,6 +112,7 @@
         feedback: "하울링 감지",
         dynamic_range: "Dynamic Range",
         lra: "LRA",
+        phase: "Stereo Phase",
       }[name] ?? name
     );
   }
@@ -133,6 +134,7 @@
   let editingChannel = $state<number | null>(null);
   let editCategory = $state<string>("unknown");
   let editLabel = $state<string>("");
+  let editPair = $state<string>("");  // 빈 문자열 = None
   let editSaving = $state(false);
   let editError = $state<string | null>(null);
 
@@ -140,6 +142,7 @@
     editingChannel = entry.channel;
     editCategory = entry.category;
     editLabel = entry.label;
+    editPair = entry.stereo_pair_with ? String(entry.stereo_pair_with) : "";
     editError = null;
   }
 
@@ -153,7 +156,12 @@
     editSaving = true;
     editError = null;
     try {
-      await updateChannel(editingChannel, editCategory, editLabel);
+      const pair =
+        editPair.trim() === "" ? null : Number.parseInt(editPair, 10);
+      if (pair !== null && (!Number.isFinite(pair) || pair < 1)) {
+        throw new Error("stereo pair은 양수 채널 번호여야 합니다");
+      }
+      await updateChannel(editingChannel, editCategory, editLabel, pair);
       await refreshChannelMap();
       editingChannel = null;
     } catch (e) {
@@ -341,6 +349,7 @@
         <dt>Peak 감시</dt><dd>{health.peak_analysis_enabled ? "활성" : "비활성"}</dd>
         <dt>Dynamic Range</dt><dd>{health.dynamic_range_analysis_enabled ? "활성" : "비활성"}</dd>
         <dt>LRA</dt><dd>{health.lra_analysis_enabled ? "활성" : "비활성"}</dd>
+        <dt>Stereo Phase</dt><dd>{health.phase_analysis_enabled ? "활성" : "비활성"}</dd>
         <dt>미터 스트림</dt><dd>{health.meter_stream_enabled ? "활성" : "비활성"}</dd>
       </dl>
     {:else}
@@ -400,6 +409,7 @@
             <th>ch</th>
             <th>카테고리</th>
             <th>라벨</th>
+            <th>stereo</th>
             <th></th>
           </tr>
         </thead>
@@ -423,6 +433,15 @@
                     disabled={editSaving}
                   />
                 </td>
+                <td class="ch-pair">
+                  <input
+                    type="text"
+                    bind:value={editPair}
+                    placeholder="페어 ch (비우면 mono)"
+                    disabled={editSaving}
+                    inputmode="numeric"
+                  />
+                </td>
                 <td class="ch-actions">
                   <button
                     class="btn-save"
@@ -437,7 +456,7 @@
                 </td>
               </tr>
               {#if editError}
-                <tr><td colspan="4" class="edit-error">오류: {editError}</td></tr>
+                <tr><td colspan="5" class="edit-error">오류: {editError}</td></tr>
               {/if}
             {:else}
               <tr>
@@ -446,6 +465,13 @@
                   <span class="cat-pill cat-{entry.category}">{categoryLabel(entry.category)}</span>
                 </td>
                 <td class="ch-label">{entry.label || "—"}</td>
+                <td class="ch-pair">
+                  {#if entry.stereo_pair_with}
+                    <span class="pair-pill">↔ ch{String(entry.stereo_pair_with).padStart(2, "0")}</span>
+                  {:else}
+                    <span class="pair-mono">—</span>
+                  {/if}
+                </td>
                 <td class="ch-actions">
                   <button class="btn-edit" onclick={() => startEdit(entry)}>편집</button>
                 </td>
@@ -813,6 +839,22 @@
   .cat-unknown {
     background: #2a2f39;
     color: #8b95a3;
+  }
+  .ch-pair {
+    width: 7rem;
+    font-size: 0.8rem;
+  }
+  .pair-pill {
+    display: inline-block;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    background: #1e3a5f;
+    color: #aac4ff;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.75rem;
+  }
+  .pair-mono {
+    color: #5a6270;
   }
   .reload-btn {
     background: transparent;

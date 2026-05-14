@@ -23,6 +23,7 @@ class TestFromConfigFlags:
             feedback=True,
             dynamic_range=True,
             lra=True,
+            phase=True,
         )
         for name in RULE_NAMES:
             assert toggles.is_enabled(name) is True

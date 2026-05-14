@@ -51,6 +51,7 @@ class TestExportOpenapi:
             "peak_analysis_enabled",
             "dynamic_range_analysis_enabled",
             "lra_analysis_enabled",
+            "phase_analysis_enabled",
             "meter_stream_enabled",
         }
 

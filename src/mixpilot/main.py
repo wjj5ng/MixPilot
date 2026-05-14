@@ -62,6 +62,7 @@ from mixpilot.dsp import (
 )
 from mixpilot.dsp.lra import MIN_DURATION_SECONDS as LRA_MIN_DURATION_SECONDS
 from mixpilot.dsp.lra import lra as compute_lra
+from mixpilot.dsp.phase import phase_correlation
 from mixpilot.infra.audio_capture import SoundDeviceAudioSource
 from mixpilot.infra.audit import AuditLogger
 from mixpilot.infra.channel_map import YamlChannelMetadata
@@ -74,6 +75,7 @@ from mixpilot.rules import (
     evaluate_all_channels_lufs,
     evaluate_all_channels_peak,
     evaluate_all_feedback,
+    evaluate_all_phase_pairs,
     evaluate_lra_value,
 )
 from mixpilot.runtime import (
@@ -167,6 +169,7 @@ def _compute_meter_payload(
     capture_seq: int,
     *,
     lra_by_channel: dict[int, float] | None = None,
+    phase_by_pair: dict[tuple[int, int], float] | None = None,
 ) -> dict[str, Any]:
     """채널별 RMS·peak dBFS + 라벨/카테고리 + (옵션) LRA를 SSE 페이로드로 직렬화.
 
@@ -190,14 +193,21 @@ def _compute_meter_payload(
     payload_channels: list[dict[str, Any]] = []
     for idx, ch in enumerate(channels):
         ch_id = int(ch.source.channel)
+        partner_id = ch.source.stereo_pair_with
+        phase_value: float | None = None
+        if partner_id is not None and phase_by_pair is not None:
+            key = (min(ch_id, partner_id), max(ch_id, partner_id))
+            phase_value = phase_by_pair.get(key)
         payload_channels.append(
             {
                 "channel": ch_id,
                 "label": ch.source.label,
                 "category": ch.source.category.value,
+                "stereo_pair_with": partner_id,
                 "rms_dbfs": to_dbfs(float(rms_lin[idx])),
                 "peak_dbfs": to_dbfs(float(peak_lin[idx])),
                 "lra_lu": (lra_by_channel.get(ch_id) if lra_by_channel else None),
+                "phase_with_pair": phase_value,
                 "octave_bands_dbfs": octave_band_levels_dbfs(
                     ch.samples, ch.format.sample_rate
                 ),
@@ -305,6 +315,7 @@ async def _processing_loop(
     lra_low_threshold_lu: float = 5.0,
     lra_high_threshold_lu: float = 15.0,
     lra_silence_threshold_lu: float = 0.1,
+    phase_warn_threshold: float = -0.3,
     meter_broker: MeterBroker | None = None,
     meter_publish_interval_frames: int = 5,
 ) -> None:
@@ -390,6 +401,38 @@ async def _processing_loop(
                     )
                 )
 
+            # Stereo phase는 항상 계산 — meter 캐시 갱신용. 룰 발화만 토글.
+            phase_by_pair: dict[tuple[int, int], float] = {}
+            seen_pairs: set[tuple[int, int]] = set()
+            for ch in channels:
+                partner_id = ch.source.stereo_pair_with
+                if partner_id is None:
+                    continue
+                a_id = int(ch.source.channel)
+                pair_key = (min(a_id, partner_id), max(a_id, partner_id))
+                if pair_key in seen_pairs:
+                    continue
+                seen_pairs.add(pair_key)
+                left_ch = next(
+                    (c for c in channels if int(c.source.channel) == pair_key[0]),
+                    None,
+                )
+                right_ch = next(
+                    (c for c in channels if int(c.source.channel) == pair_key[1]),
+                    None,
+                )
+                if left_ch is None or right_ch is None:
+                    continue
+                phase_by_pair[pair_key] = phase_correlation(
+                    left_ch.samples, right_ch.samples
+                )
+            if tg["phase"]:
+                recommendations.extend(
+                    evaluate_all_phase_pairs(
+                        channels, warn_threshold=phase_warn_threshold
+                    )
+                )
+
             # LRA buffer도 항상 누적. 토글 + interval 조건 일치 시 평가.
             lra_buffer.write(signal.samples)
             if (
@@ -430,6 +473,7 @@ async def _processing_loop(
                         channels,
                         signal.capture_seq,
                         lra_by_channel=latest_lra if tg["lra"] else None,
+                        phase_by_pair=phase_by_pair if phase_by_pair else None,
                     )
                 )
 
@@ -468,6 +512,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         feedback=cfg.feedback_analysis.enabled,
         dynamic_range=cfg.dynamic_range_analysis.enabled,
         lra=cfg.lra_analysis.enabled,
+        phase=cfg.phase_analysis.enabled,
     )
 
     @asynccontextmanager
@@ -570,6 +615,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         lra_silence_threshold_lu=(
                             cfg.lra_analysis.silence_threshold_lu
                         ),
+                        phase_warn_threshold=cfg.phase_analysis.warn_threshold,
                         meter_broker=(
                             meter_broker if cfg.meter_stream.enabled else None
                         ),
@@ -651,6 +697,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             peak_analysis_enabled=cfg.peak_analysis.enabled,
             dynamic_range_analysis_enabled=cfg.dynamic_range_analysis.enabled,
             lra_analysis_enabled=cfg.lra_analysis.enabled,
+            phase_analysis_enabled=cfg.phase_analysis.enabled,
             meter_stream_enabled=cfg.meter_stream.enabled,
         )
 
@@ -694,6 +741,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 channel=int(s.channel),
                 category=s.category.value,
                 label=s.label,
+                stereo_pair_with=s.stereo_pair_with,
             )
             for s in sources
         ]
@@ -733,11 +781,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 status_code=400, detail=f"invalid category: {body.category}"
             ) from e
         cm: YamlChannelMetadata = request.app.state.channel_map
-        updated = cm.update_channel(channel_id, category=category, label=body.label)
+        # stereo_pair_with 가드: 자기 자신을 페어로 설정 불가, 1 이상이거나 None.
+        pair = body.stereo_pair_with
+        if pair is not None:
+            if pair == channel_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="stereo_pair_with cannot equal channel_id",
+                )
+            if pair < 1:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"stereo_pair_with must be >= 1, got {pair}",
+                )
+        updated = cm.update_channel(
+            channel_id,
+            category=category,
+            label=body.label,
+            stereo_pair_with=pair,
+        )
         return ChannelMapEntry(
             channel=int(updated.channel),
             category=updated.category.value,
             label=updated.label,
+            stereo_pair_with=updated.stereo_pair_with,
         )
 
     @app.get("/control/rules", response_model=RulesResponse)
