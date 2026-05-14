@@ -23,6 +23,7 @@ export type ChannelMapEntry = components["schemas"]["ChannelMapEntry"];
 export type ChannelMapResponse = components["schemas"]["ChannelMapResponse"];
 export type RuleState = components["schemas"]["RuleState"];
 export type RulesResponse = components["schemas"]["RulesResponse"];
+export type OperatingModeState = components["schemas"]["OperatingModeState"];
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -32,6 +33,33 @@ export async function fetchHealth(): Promise<HealthResponse> {
     throw new Error(`/health failed: ${response.status}`);
   }
   return (await response.json()) as HealthResponse;
+}
+
+/** 현재 운영 모드 + 킬 스위치 active 여부. */
+export async function fetchOperatingMode(): Promise<OperatingModeState> {
+  const response = await fetch(`${API_BASE_URL}/control/operating-mode`);
+  if (!response.ok) {
+    throw new Error(`/control/operating-mode failed: ${response.status}`);
+  }
+  return (await response.json()) as OperatingModeState;
+}
+
+/** 평상시 운영 모드 토글 — dry-run / assist / auto. */
+export async function setOperatingMode(
+  mode: string,
+): Promise<OperatingModeState> {
+  const response = await fetch(`${API_BASE_URL}/control/operating-mode`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode }),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(
+      `/control/operating-mode failed: ${response.status} ${detail}`,
+    );
+  }
+  return (await response.json()) as OperatingModeState;
 }
 
 /** ADR-0008 §3 킬 스위치 — controller를 즉시 dry-run으로 다운그레이드. */

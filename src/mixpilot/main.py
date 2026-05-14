@@ -20,6 +20,8 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -37,6 +39,8 @@ from mixpilot.api.schemas import (
     ControlResponse,
     HealthResponse,
     MeterSnapshotEvent,
+    OperatingModeRequest,
+    OperatingModeState,
     OscMessage,
     RecentActionsResponse,
     RecommendationEvent,
@@ -44,7 +48,7 @@ from mixpilot.api.schemas import (
     RuleState,
     RuleToggleRequest,
 )
-from mixpilot.config import AudioSource, Settings, get_settings
+from mixpilot.config import AudioSource, OperatingMode, Settings, get_settings
 from mixpilot.domain import (
     Channel,
     ChannelId,
@@ -489,6 +493,23 @@ async def _processing_loop(
         raise
 
 
+def _resolve_audit_log_path(path: Path | None) -> Path | None:
+    """audit_log_path의 strftime 패턴을 *서버 가동 시점*으로 expand.
+
+    `./logs/audit-%Y%m%d.jsonl` → `./logs/audit-20260514.jsonl`. service별
+    자동 분리 — 운영자가 매 service마다 환경 변수를 손볼 필요 없음.
+
+    부모 디렉토리도 mkdir(parents=True, exist_ok=True) — 첫 service 시 폴더
+    없어도 자동 생성. None이면 None 반환(감사 로그 비활성).
+    """
+    if path is None:
+        return None
+    expanded = datetime.now().strftime(str(path))
+    resolved = Path(expanded)
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    return resolved
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """FastAPI 앱 팩토리.
 
@@ -499,7 +520,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     broker = RecommendationBroker()
     meter_broker = MeterBroker()
     # audit_log_path가 None이면 record()/read_recent()가 모두 no-op.
-    audit_logger = AuditLogger(path=cfg.audit_log_path)
+    # path에 strftime 패턴(%Y, %m 등)이 있으면 서버 가동 시점의 시각으로 expand
+    # → service별 자동 분리. 부모 디렉토리도 mkdir(parents=True).
+    audit_logger = AuditLogger(path=_resolve_audit_log_path(cfg.audit_log_path))
     # channel_map은 audio 비활성 상태에서도 endpoint가 읽을 수 있어야 하므로
     # 라이프스팬 외부에서 1회 생성.
     channel_map = YamlChannelMetadata(cfg.channel_map_path)
@@ -891,6 +914,57 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         controller.force_dry_run()
         return ControlResponse(
             status="forced dry-run", effective_mode=controller.effective_mode.value
+        )
+
+    @app.get("/control/operating-mode", response_model=OperatingModeState)
+    async def get_operating_mode(request: Request) -> OperatingModeState:
+        """현재 운영 모드 + 킬 스위치 active 여부.
+
+        controller가 없으면(audio 비활성) config의 디폴트 모드를 반환하고
+        kill_switch_engaged=False.
+        """
+        controller = request.app.state.controller
+        if controller is None:
+            mode = request.app.state.settings.m32.operating_mode.value
+            return OperatingModeState(mode=mode, kill_switch_engaged=False)
+        return OperatingModeState(
+            mode=controller.effective_mode.value,
+            kill_switch_engaged=controller.kill_switch_engaged,
+        )
+
+    @app.put("/control/operating-mode", response_model=OperatingModeState)
+    async def update_operating_mode(
+        body: OperatingModeRequest, request: Request
+    ) -> OperatingModeState:
+        """평상시 운영 모드 토글 — dry-run/assist/auto.
+
+        Raises:
+            HTTP 400: 알 수 없는 mode.
+            HTTP 409: 킬 스위치 active 상태에서 호출 — 재시작 강제.
+            HTTP 503: controller 없음(audio 비활성).
+        """
+        from fastapi import HTTPException
+
+        controller = request.app.state.controller
+        if controller is None:
+            raise HTTPException(
+                status_code=503,
+                detail="no controller (audio disabled)",
+            )
+        try:
+            mode = OperatingMode(body.mode)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400, detail=f"invalid mode: {body.mode}"
+            ) from e
+        try:
+            controller.set_operating_mode(mode)
+        except RuntimeError as e:
+            # 킬 스위치 active.
+            raise HTTPException(status_code=409, detail=str(e)) from e
+        return OperatingModeState(
+            mode=controller.effective_mode.value,
+            kill_switch_engaged=controller.kill_switch_engaged,
         )
 
     @app.get(

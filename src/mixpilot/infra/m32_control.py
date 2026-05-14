@@ -95,20 +95,47 @@ class M32OscController:
         self._action_history = action_history
         # 킬 스위치 — config 변경 없이 운영 모드를 런타임에 강제 다운그레이드.
         self._mode_override: OperatingMode | None = None
+        # 킬 스위치 *플래그* — `force_dry_run()`로만 set. 평상시 set_operating_mode가
+        # 이 플래그 active일 땐 거부 → 운영자가 비상 후 *재시작*을 강제.
+        self._kill_switch_engaged: bool = False
 
     def force_dry_run(self) -> None:
         """ADR-0008 §3 킬 스위치 — 모든 자동 액션 즉시 정지.
 
         config는 그대로, 런타임 모드만 DRY_RUN으로 덮어쓴다. 한 번 호출되면
         `clear_override()` 또는 프로세스 재시작 전까지 어떤 액션도 송신되지 않는다.
+        킬 스위치 플래그가 set되어 평상시 모드 변경(`set_operating_mode`)을 차단.
         """
         self._mode_override = OperatingMode.DRY_RUN
+        self._kill_switch_engaged = True
         logger.warning("kill switch engaged — forcing dry-run")
 
+    def set_operating_mode(self, mode: OperatingMode) -> None:
+        """평상시 운영 모드 변경 — 운영자 UI에서 dry-run/assist/auto 토글.
+
+        킬 스위치가 active이면 `RuntimeError` — 비상 후 *명시적 재시작*을 강제.
+        ADR-0008 §3.4: 킬 스위치는 프로세스 재시작까지 풀리지 않아야 운영자의
+        안전 net이 유지됨.
+        """
+        if self._kill_switch_engaged:
+            raise RuntimeError("kill switch is engaged; restart process to clear")
+        self._mode_override = mode
+        logger.info("operating mode set to %s (runtime override)", mode.value)
+
     def clear_override(self) -> None:
-        """런타임 모드 오버라이드 해제. config 모드로 복귀."""
+        """런타임 모드 오버라이드 해제. config 모드로 복귀. 킬 스위치 플래그도 clear.
+
+        ⚠️ 일반 운영 중엔 사용 금지 — 킬 스위치 복구는 *프로세스 재시작*이 표준.
+        본 메서드는 테스트·디버깅 전용.
+        """
         self._mode_override = None
+        self._kill_switch_engaged = False
         logger.info("mode override cleared — back to config mode")
+
+    @property
+    def kill_switch_engaged(self) -> bool:
+        """킬 스위치 active 여부 — endpoint에서 mode 변경 거부 판단용."""
+        return self._kill_switch_engaged
 
     @property
     def effective_mode(self) -> OperatingMode:
