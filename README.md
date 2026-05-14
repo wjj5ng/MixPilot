@@ -74,7 +74,8 @@ npm --prefix frontend run check  # 프론트 타입체크
 |---|---|
 | [`AGENTS.md`](AGENTS.md) | 단일 컨텍스트 인덱스 (스택·도메인·관례·실행 명령). AI 어시스턴트도 같이 읽는다 |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | 모듈 경계·의존성 방향·실시간 예산·ADR 인덱스 |
-| [`docs/adr/`](docs/adr/) | 아키텍처 결정 기록 (0001~0008) |
+| [`CHANGELOG.md`](CHANGELOG.md) | 릴리스별 변경 기록 (Keep a Changelog / SemVer) |
+| [`docs/adr/`](docs/adr/) | 아키텍처 결정 기록 (0001~0009) |
 | [`docs/hardware-dependent.md`](docs/hardware-dependent.md) | 실 M32가 있어야 진행/검증 가능한 작업 인벤토리 |
 | [`evals/`](evals/) | DSP 회귀 케이스 (사인·DC·무음·임펄스 표준 신호) |
 
