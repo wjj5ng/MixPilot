@@ -1,0 +1,30 @@
+# MixPilot 프리셋: 리허설 (rehearsal)
+#
+# 리허설/사운드 체크 — feedback 감지만 필수, 다른 분석은 노이즈가 됨.
+# audit 로그도 끔(throwaway). 합성 audio + 가벼운 채널 수로 빠른 가동.
+#
+# 적용:
+#   uv run python -m mixpilot.scripts.serve --preset rehearsal
+
+description: 리허설 — feedback 우선, 다른 알림은 최소화
+audio:
+  enabled: true
+  source: synthetic
+  num_channels: 16
+m32:
+  operating_mode: dry-run
+peak_analysis:
+  enabled: false   # 리허설 중엔 클립 자주 발생, 알림이 노이즈
+lufs_analysis:
+  enabled: false
+feedback_analysis:
+  enabled: true
+  pnr_threshold_db: 18.0   # 보수적 — 큰 신호에서 오감지 줄임
+dynamic_range_analysis:
+  enabled: false
+lra_analysis:
+  enabled: false
+meter_stream:
+  enabled: true   # 미터는 항상 — 신호 확인용
+dev_cors_enabled: true   # 리허설은 개발 환경에서 자주 가동
+# audit_log_path: 미설정 — 리허설 이력은 보관 안 함

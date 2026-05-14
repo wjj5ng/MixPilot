@@ -1,0 +1,38 @@
+# MixPilot 프리셋: 예배 (worship)
+#
+# 예배 환경 — 설교자 명료도와 보컬 따뜻함 우선. assist 모드로 권장 수준의
+# 자동 보정만, 운영자가 항상 화면을 봐야 한다.
+#
+# 적용:
+#   uv run python -m mixpilot.scripts.serve --preset worship
+#
+# 본 파일이 설정한 키만 환경 변수로 덮어쓰며, 운영자가 CLI에서 직접 지정한
+# 변수는 우선 (덮어쓰지 않음).
+
+description: 예배 service — 설교자 클리어, 자동 보정 assist
+audio:
+  enabled: true
+  source: synthetic   # M32 연결 시 sounddevice로 교체
+  num_channels: 8
+m32:
+  operating_mode: assist
+peak_analysis:
+  enabled: true
+  headroom_threshold_dbfs: -3.0   # 예배는 헤드룸 여유 충분히
+lufs_analysis:
+  enabled: true
+feedback_analysis:
+  enabled: true
+  pnr_threshold_db: 15.0
+dynamic_range_analysis:
+  enabled: false   # 설교·찬양은 DR 알림이 노이즈가 됨
+lra_analysis:
+  enabled: false   # 짧은 service에서 LRA는 정보량 작음
+meter_stream:
+  enabled: true
+rms_dbfs:
+  preacher: -23.0   # 설교자는 약간 더 또렷하게
+lufs:
+  preacher: -20.0
+dev_cors_enabled: false   # 운영 환경에서는 OFF
+audit_log_path: logs/audit-worship.jsonl

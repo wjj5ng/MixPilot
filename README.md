@@ -21,6 +21,27 @@ npm --prefix frontend install
 
 ### 가동 (M32 없이도 가능)
 
+#### 프리셋 사용 (권장)
+
+service별 환경 변수 번들 — `config/presets/*.yaml`:
+
+```bash
+# 터미널 1 — 백엔드 (예배 / 공연 / 리허설)
+uv run python -m mixpilot.scripts.serve --preset worship
+uv run python -m mixpilot.scripts.serve --preset performance
+uv run python -m mixpilot.scripts.serve --preset rehearsal
+
+# 사용 가능한 프리셋 보기
+uv run python -m mixpilot.scripts.serve --list-presets
+
+# 터미널 2 — 프론트엔드
+npm --prefix frontend run dev
+```
+
+운영자가 `MIXPILOT_*` env로 명시한 값은 프리셋이 덮지 않음 (사용자 우선).
+
+#### 직접 env (개별 키 제어)
+
 `MIXPILOT_AUDIO__SOURCE=synthetic` 으로 합성 오디오로 처리 루프를 검증할 수 있습니다.
 
 ```bash

@@ -1,0 +1,32 @@
+# MixPilot 프리셋: 공연 (performance)
+#
+# 라이브 공연 환경 — 다이내믹 폭 큰 콘텐츠, 모든 분석 활성, 자동 적용은 *없음*
+# (dry-run). 추천만 받고 운영자가 직접 페이더 운용. 사후 검토용 풀 audit 로그.
+#
+# 적용:
+#   uv run python -m mixpilot.scripts.serve --preset performance
+
+description: 공연 — 모든 분석 활성, dry-run 권고만, 풀 audit
+audio:
+  enabled: true
+  source: synthetic
+  num_channels: 32   # M32 풀 채널
+m32:
+  operating_mode: dry-run
+peak_analysis:
+  enabled: true
+  headroom_threshold_dbfs: -1.0   # 공연은 헤드룸을 더 좁게 운용
+lufs_analysis:
+  enabled: true
+feedback_analysis:
+  enabled: true
+  pnr_threshold_db: 12.0   # 더 민감하게 — 큰 음량에서 빠른 감지
+dynamic_range_analysis:
+  enabled: true   # 공연은 DR 변화가 의미 있음
+lra_analysis:
+  enabled: true
+  buffer_seconds: 30.0   # 곡 길이만큼 누적
+meter_stream:
+  enabled: true
+dev_cors_enabled: false
+audit_log_path: logs/audit-performance.jsonl
