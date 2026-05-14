@@ -7,6 +7,38 @@
   const DB_FLOOR = -60;
   const DB_CEILING = 0;
 
+  // Peak hold: 새 peak가 들어오면 즉시 위치 갱신 + 타임스탬프.
+  // HOLD_MS 동안 유지 → 이후 DECAY_DB_PER_FRAME만큼 매 snapshot 떨어뜨림.
+  const HOLD_MS = 1500;
+  const DECAY_DB_PER_FRAME = 0.5;
+
+  type Hold = { dbfs: number; setAt: number };
+  // 채널별 hold 상태 — $state로 reactivity 확보.
+  let holds = $state<Map<number, Hold>>(new Map());
+
+  // channels prop이 갱신될 때마다 hold 상태 갱신.
+  $effect(() => {
+    const now = Date.now();
+    const next = new Map(holds);
+    for (const ch of channels) {
+      const cur = next.get(ch.channel);
+      if (cur === undefined || ch.peak_dbfs >= cur.dbfs) {
+        // 새 peak가 더 크거나 같음 → 즉시 갱신 + 타임 리셋.
+        next.set(ch.channel, { dbfs: ch.peak_dbfs, setAt: now });
+      } else if (now - cur.setAt > HOLD_MS) {
+        // hold 만료 → 점진적 감쇠. 현재 peak 아래로는 안 떨어짐.
+        const decayed = Math.max(ch.peak_dbfs, cur.dbfs - DECAY_DB_PER_FRAME);
+        next.set(ch.channel, { dbfs: decayed, setAt: cur.setAt });
+      }
+    }
+    // 더 이상 존재하지 않는 채널은 holds에서 제거.
+    const liveIds = new Set(channels.map((c) => c.channel));
+    for (const id of next.keys()) {
+      if (!liveIds.has(id)) next.delete(id);
+    }
+    holds = next;
+  });
+
   /** dBFS를 0(floor) ~ 1(ceiling) 정규화. */
   function normalize(db: number): number {
     if (!Number.isFinite(db)) return 0;
@@ -18,6 +50,11 @@
     if (db >= -1) return "#ff5252";
     if (db >= -6) return "#ffb547";
     return "#6fcf97";
+  }
+
+  /** 해당 채널의 hold dBFS, 없으면 현재 peak로 폴백. */
+  function holdDbfs(ch: ChannelMeter): number {
+    return holds.get(ch.channel)?.dbfs ?? ch.peak_dbfs;
   }
 </script>
 
@@ -45,6 +82,10 @@
             <div
               class="meter-peak"
               style="left: {normalize(ch.peak_dbfs) * 100}%; background: {colorFor(ch.peak_dbfs)};"
+            ></div>
+            <div
+              class="meter-hold"
+              style="left: {normalize(holdDbfs(ch)) * 100}%; background: {colorFor(holdDbfs(ch))};"
             ></div>
           </div>
           <div class="meter-values">
@@ -131,6 +172,15 @@
     width: 2px;
     transition: left 60ms linear;
     box-shadow: 0 0 4px currentColor;
+  }
+  .meter-hold {
+    /* 표준 콘솔 미터의 peak hold — 가는 막대가 잠시 머문다. */
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    opacity: 0.6;
+    transition: left 200ms linear;
   }
   .meter-values {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
