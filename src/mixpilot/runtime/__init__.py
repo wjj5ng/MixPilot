@@ -11,12 +11,15 @@ from .action_history import ActionHistory, HistoryEntry
 from .auto_guard import AutoGuard, GuardDecision
 from .buffer import RollingBuffer
 from .feedback_detector import FeedbackDetector
+from .rule_toggles import RULE_NAMES, RuleToggles
 
 __all__ = [
+    "RULE_NAMES",
     "ActionHistory",
     "AutoGuard",
     "FeedbackDetector",
     "GuardDecision",
     "HistoryEntry",
     "RollingBuffer",
+    "RuleToggles",
 ]

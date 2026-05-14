@@ -40,6 +40,9 @@ from mixpilot.api.schemas import (
     OscMessage,
     RecentActionsResponse,
     RecommendationEvent,
+    RulesResponse,
+    RuleState,
+    RuleToggleRequest,
 )
 from mixpilot.config import AudioSource, Settings, get_settings
 from mixpilot.domain import (
@@ -73,7 +76,13 @@ from mixpilot.rules import (
     evaluate_all_feedback,
     evaluate_lra_value,
 )
-from mixpilot.runtime import ActionHistory, FeedbackDetector, RollingBuffer
+from mixpilot.runtime import (
+    ActionHistory,
+    FeedbackDetector,
+    RollingBuffer,
+    RuleToggles,
+)
+from mixpilot.runtime.rule_toggles import RULE_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -279,20 +288,19 @@ async def _processing_loop(
     broker: RecommendationBroker,
     sources_by_id: dict[int, Source],
     rms_targets: dict[str, float],
+    rule_toggles: RuleToggles,
     *,
-    lufs_buffer: RollingBuffer | None = None,
-    lufs_targets: dict[str, float] | None = None,
+    lufs_buffer: RollingBuffer,
+    lufs_targets: dict[str, float],
     lufs_eval_interval_frames: int = 50,
-    feedback_detectors: dict[int, FeedbackDetector] | None = None,
+    feedback_detectors: dict[int, FeedbackDetector],
     feedback_pnr_threshold_db: float = 15.0,
-    peak_enabled: bool = False,
     peak_headroom_threshold_dbfs: float = -1.0,
     peak_oversample: int = 4,
-    dynamic_range_enabled: bool = False,
     dynamic_range_low_threshold_db: float = 6.0,
     dynamic_range_high_threshold_db: float = 20.0,
     dynamic_range_silence_threshold_db: float = 0.5,
-    lra_buffer: RollingBuffer | None = None,
+    lra_buffer: RollingBuffer,
     lra_eval_interval_frames: int = 300,
     lra_low_threshold_lu: float = 5.0,
     lra_high_threshold_lu: float = 15.0,
@@ -302,19 +310,13 @@ async def _processing_loop(
 ) -> None:
     """오디오 프레임 → 룰 평가 → 제어 송신 + 브로커 푸시.
 
-    - RMS 룰: 매 프레임.
-    - LUFS 룰: `lufs_buffer`가 주입되었고 ~400ms 이상 누적되었을 때만,
-      `lufs_eval_interval_frames` 마다 평가.
-    - Feedback 룰: `feedback_detectors`가 주입되었으면 매 프레임 채널별로
-      detector 업데이트. 지속 검증된 peaks만 Recommendation 발화.
-    - Peak 룰: `peak_enabled=True`면 매 프레임 채널별 true peak 평가, 헤드룸
-      임계 이상이면 INFO 발화.
-    - 미터 스트림: `meter_broker`가 주입되었으면 `meter_publish_interval_frames`
-      마다 채널별 RMS·peak dBFS를 broker에 publish.
+    각 룰의 활성 여부는 `rule_toggles.snapshot()`을 매 프레임 시작 시 캐시해
+    그 frame 안에서는 일관된 상태로 평가. 운영자가 service 도중 토글해도 다음
+    프레임부터 즉시 반영 — 재시작 불필요.
+
+    버퍼·detector는 *항상* 사전 생성. enabled 토글 OFF 시에도 누적은 계속됨
+    (다시 ON 했을 때 즉시 의미 있는 결과 얻을 수 있도록).
     """
-    lufs_enabled = lufs_buffer is not None and lufs_targets is not None
-    feedback_enabled = feedback_detectors is not None
-    lra_enabled = lra_buffer is not None
     meter_enabled = meter_broker is not None
     # 채널 → 최신 LRA 값 캐시. publish cadence(~9 Hz) > LRA eval cadence(~0.3 Hz)이므로
     # 매 publish에 최신 LRA를 포함하려면 이전 평가값을 보관해야 한다.
@@ -323,50 +325,53 @@ async def _processing_loop(
     try:
         async for signal in audio.stream():
             frame_count += 1
+            # 토글 상태를 frame 단위로 캐시 — 같은 frame 내 일관성 보장.
+            tg = rule_toggles.snapshot()
             channels = _split_signal_to_channels(signal, sources_by_id)
-            recommendations = evaluate_all_channels(channels, rms_targets)
+            recommendations = (
+                evaluate_all_channels(channels, rms_targets) if tg["loudness"] else []
+            )
 
-            if lufs_enabled:
-                assert lufs_buffer is not None
-                assert lufs_targets is not None
-                lufs_buffer.write(signal.samples)
-                if (
-                    frame_count % lufs_eval_interval_frames == 0
-                    and lufs_buffer.fill / signal.format.sample_rate
-                    >= MIN_DURATION_SECONDS
-                ):
-                    buffered_signal = Signal(
-                        samples=lufs_buffer.snapshot(),
-                        format=signal.format,
-                        capture_seq=signal.capture_seq,
-                    )
-                    lufs_channels = _split_signal_to_channels(
-                        buffered_signal, sources_by_id
-                    )
-                    recommendations.extend(
-                        evaluate_all_channels_lufs(lufs_channels, lufs_targets)
-                    )
+            # LUFS buffer는 항상 누적 — 토글 OFF여도 신호는 쌓아둠 → 다음 ON 시
+            # 즉시 의미 있는 평가 가능.
+            lufs_buffer.write(signal.samples)
+            if (
+                tg["lufs"]
+                and frame_count % lufs_eval_interval_frames == 0
+                and lufs_buffer.fill / signal.format.sample_rate >= MIN_DURATION_SECONDS
+            ):
+                buffered_signal = Signal(
+                    samples=lufs_buffer.snapshot(),
+                    format=signal.format,
+                    capture_seq=signal.capture_seq,
+                )
+                lufs_channels = _split_signal_to_channels(
+                    buffered_signal, sources_by_id
+                )
+                recommendations.extend(
+                    evaluate_all_channels_lufs(lufs_channels, lufs_targets)
+                )
 
-            if feedback_enabled:
-                assert feedback_detectors is not None
-                peaks_by_source = {}
-                for channel in channels:
-                    ch_id = int(channel.source.channel)
-                    detector = feedback_detectors.get(ch_id)
-                    if detector is None:
-                        continue
-                    peaks = detector.update(channel.samples)
-                    if peaks:
-                        peaks_by_source[channel.source] = peaks
-                if peaks_by_source:
-                    recommendations.extend(
-                        evaluate_all_feedback(
-                            peaks_by_source,
-                            pnr_threshold_db=feedback_pnr_threshold_db,
-                        )
+            # Feedback detector도 항상 update — persistence 추적은 *지속적으로*
+            # 일어나야 의미 있음. 토글 OFF면 발화만 안 함.
+            peaks_by_source = {}
+            for channel in channels:
+                ch_id = int(channel.source.channel)
+                detector = feedback_detectors.get(ch_id)
+                if detector is None:
+                    continue
+                peaks = detector.update(channel.samples)
+                if peaks:
+                    peaks_by_source[channel.source] = peaks
+            if tg["feedback"] and peaks_by_source:
+                recommendations.extend(
+                    evaluate_all_feedback(
+                        peaks_by_source,
+                        pnr_threshold_db=feedback_pnr_threshold_db,
                     )
+                )
 
-            if peak_enabled:
+            if tg["peak"]:
                 recommendations.extend(
                     evaluate_all_channels_peak(
                         channels,
@@ -375,7 +380,7 @@ async def _processing_loop(
                     )
                 )
 
-            if dynamic_range_enabled:
+            if tg["dynamic_range"]:
                 recommendations.extend(
                     evaluate_all_channels_dynamic_range(
                         channels,
@@ -385,42 +390,38 @@ async def _processing_loop(
                     )
                 )
 
-            if lra_enabled:
-                assert lra_buffer is not None
-                lra_buffer.write(signal.samples)
-                if (
-                    frame_count % lra_eval_interval_frames == 0
-                    and lra_buffer.fill / signal.format.sample_rate
-                    >= LRA_MIN_DURATION_SECONDS
-                ):
-                    buffered_signal = Signal(
-                        samples=lra_buffer.snapshot(),
-                        format=signal.format,
-                        capture_seq=signal.capture_seq,
+            # LRA buffer도 항상 누적. 토글 + interval 조건 일치 시 평가.
+            lra_buffer.write(signal.samples)
+            if (
+                tg["lra"]
+                and frame_count % lra_eval_interval_frames == 0
+                and lra_buffer.fill / signal.format.sample_rate
+                >= LRA_MIN_DURATION_SECONDS
+            ):
+                buffered_signal = Signal(
+                    samples=lra_buffer.snapshot(),
+                    format=signal.format,
+                    capture_seq=signal.capture_seq,
+                )
+                lra_channels = _split_signal_to_channels(buffered_signal, sources_by_id)
+                # LRA를 한 번만 계산 — meter 캐시·룰 평가 모두 같은 값 사용.
+                for lra_ch in lra_channels:
+                    try:
+                        value = compute_lra(lra_ch.samples, lra_ch.format.sample_rate)
+                    except ValueError:
+                        # 채널 신호가 충분하지 않거나 무효 — 캐시 미반영.
+                        continue
+                    ch_id = int(lra_ch.source.channel)
+                    latest_lra[ch_id] = value
+                    rec = evaluate_lra_value(
+                        lra_ch.source,
+                        value,
+                        low_threshold_lu=lra_low_threshold_lu,
+                        high_threshold_lu=lra_high_threshold_lu,
+                        silence_threshold_lu=lra_silence_threshold_lu,
                     )
-                    lra_channels = _split_signal_to_channels(
-                        buffered_signal, sources_by_id
-                    )
-                    # LRA를 한 번만 계산 — meter 캐시·룰 평가 모두 같은 값 사용.
-                    for lra_ch in lra_channels:
-                        try:
-                            value = compute_lra(
-                                lra_ch.samples, lra_ch.format.sample_rate
-                            )
-                        except ValueError:
-                            # 채널 신호가 충분하지 않거나 무효 — 캐시 미반영.
-                            continue
-                        ch_id = int(lra_ch.source.channel)
-                        latest_lra[ch_id] = value
-                        rec = evaluate_lra_value(
-                            lra_ch.source,
-                            value,
-                            low_threshold_lu=lra_low_threshold_lu,
-                            high_threshold_lu=lra_high_threshold_lu,
-                            silence_threshold_lu=lra_silence_threshold_lu,
-                        )
-                        if rec is not None:
-                            recommendations.append(rec)
+                    if rec is not None:
+                        recommendations.append(rec)
 
             if meter_enabled and frame_count % meter_publish_interval_frames == 0:
                 assert meter_broker is not None
@@ -428,7 +429,7 @@ async def _processing_loop(
                     _compute_meter_payload(
                         channels,
                         signal.capture_seq,
-                        lra_by_channel=latest_lra if lra_enabled else None,
+                        lra_by_channel=latest_lra if tg["lra"] else None,
                     )
                 )
 
@@ -457,6 +458,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # channel_map은 audio 비활성 상태에서도 endpoint가 읽을 수 있어야 하므로
     # 라이프스팬 외부에서 1회 생성.
     channel_map = YamlChannelMetadata(cfg.channel_map_path)
+    # rule_toggles는 audio 비활성 상태에서도 endpoint가 응답하도록 외부 생성.
+    # audio enabled 시 lifespan이 *덮어쓸* 수도 있지만 동일 인스턴스 패턴은
+    # 단순. 처리 루프는 본 인스턴스를 직접 받음 → 동기.
+    rule_toggles_default = RuleToggles.from_config_flags(
+        loudness=True,
+        lufs=cfg.lufs_analysis.enabled,
+        peak=cfg.peak_analysis.enabled,
+        feedback=cfg.feedback_analysis.enabled,
+        dynamic_range=cfg.dynamic_range_analysis.enabled,
+        lra=cfg.lra_analysis.enabled,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -486,42 +498,42 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 sources_by_id = {int(s.channel): s for s in sources}
                 rms_targets = _build_rms_dbfs_targets(cfg)
 
-                lufs_buffer: RollingBuffer | None = None
-                lufs_targets: dict[str, float] | None = None
-                if cfg.lufs_analysis.enabled:
-                    capacity = int(
-                        cfg.audio.sample_rate * cfg.lufs_analysis.buffer_seconds
-                    )
-                    lufs_buffer = RollingBuffer(
-                        capacity_frames=capacity,
-                        num_channels=cfg.audio.num_channels,
-                        dtype=np.float32,
-                    )
-                    lufs_targets = _build_lufs_targets(cfg)
+                # 버퍼·detector는 *항상* 생성 — 토글 OFF여도 누적은 진행되어
+                # 다시 ON 시 즉시 의미 있는 평가가 가능. config에 값이 없으면
+                # 합리적 디폴트 사용.
+                lufs_capacity = int(
+                    cfg.audio.sample_rate * cfg.lufs_analysis.buffer_seconds
+                )
+                lufs_buffer = RollingBuffer(
+                    capacity_frames=lufs_capacity,
+                    num_channels=cfg.audio.num_channels,
+                    dtype=np.float32,
+                )
+                lufs_targets = _build_lufs_targets(cfg)
 
-                lra_buffer: RollingBuffer | None = None
-                if cfg.lra_analysis.enabled:
-                    capacity = int(
-                        cfg.audio.sample_rate * cfg.lra_analysis.buffer_seconds
-                    )
-                    lra_buffer = RollingBuffer(
-                        capacity_frames=capacity,
-                        num_channels=cfg.audio.num_channels,
-                        dtype=np.float32,
-                    )
+                lra_capacity = int(
+                    cfg.audio.sample_rate * cfg.lra_analysis.buffer_seconds
+                )
+                lra_buffer = RollingBuffer(
+                    capacity_frames=lra_capacity,
+                    num_channels=cfg.audio.num_channels,
+                    dtype=np.float32,
+                )
 
-                feedback_detectors: dict[int, FeedbackDetector] | None = None
-                if cfg.feedback_analysis.enabled:
-                    feedback_detectors = {
-                        ch_id: FeedbackDetector(
-                            cfg.audio.sample_rate,
-                            persistence_frames=cfg.feedback_analysis.persistence_frames,
-                            pnr_threshold_db=cfg.feedback_analysis.pnr_threshold_db,
-                            min_frequency_hz=cfg.feedback_analysis.min_frequency_hz,
-                            max_frequency_hz=cfg.feedback_analysis.max_frequency_hz,
-                        )
-                        for ch_id in range(1, cfg.audio.num_channels + 1)
-                    }
+                feedback_detectors = {
+                    ch_id: FeedbackDetector(
+                        cfg.audio.sample_rate,
+                        persistence_frames=cfg.feedback_analysis.persistence_frames,
+                        pnr_threshold_db=cfg.feedback_analysis.pnr_threshold_db,
+                        min_frequency_hz=cfg.feedback_analysis.min_frequency_hz,
+                        max_frequency_hz=cfg.feedback_analysis.max_frequency_hz,
+                    )
+                    for ch_id in range(1, cfg.audio.num_channels + 1)
+                }
+
+                # rule_toggles는 create_app에서 만든 인스턴스를 그대로 사용.
+                # endpoint가 mutate → 처리 루프가 다음 frame부터 반영.
+                rule_toggles = rule_toggles_default
 
                 task = asyncio.create_task(
                     _processing_loop(
@@ -530,17 +542,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         broker,
                         sources_by_id,
                         rms_targets,
+                        rule_toggles,
                         lufs_buffer=lufs_buffer,
                         lufs_targets=lufs_targets,
                         lufs_eval_interval_frames=cfg.lufs_analysis.eval_interval_frames,
                         feedback_detectors=feedback_detectors,
                         feedback_pnr_threshold_db=cfg.feedback_analysis.pnr_threshold_db,
-                        peak_enabled=cfg.peak_analysis.enabled,
                         peak_headroom_threshold_dbfs=(
                             cfg.peak_analysis.headroom_threshold_dbfs
                         ),
                         peak_oversample=cfg.peak_analysis.oversample,
-                        dynamic_range_enabled=cfg.dynamic_range_analysis.enabled,
                         dynamic_range_low_threshold_db=(
                             cfg.dynamic_range_analysis.low_threshold_db
                         ),
@@ -615,6 +626,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.action_history = action_history
     app.state.audit_logger = audit_logger
     app.state.channel_map = channel_map
+    app.state.rule_toggles = rule_toggles_default
 
     if cfg.dev_cors_enabled:
         app.add_middleware(
@@ -727,6 +739,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             category=updated.category.value,
             label=updated.label,
         )
+
+    @app.get("/control/rules", response_model=RulesResponse)
+    async def get_rules(request: Request) -> RulesResponse:
+        """모든 룰의 현재 토글 상태 — service 도중 운영자 가시용."""
+        toggles: RuleToggles = request.app.state.rule_toggles
+        snap = toggles.snapshot()
+        rules = [RuleState(name=name, enabled=snap[name]) for name in RULE_NAMES]
+        return RulesResponse(rules=rules)
+
+    @app.put("/control/rules/{rule_name}", response_model=RuleState)
+    async def update_rule(
+        rule_name: str,
+        body: RuleToggleRequest,
+        request: Request,
+    ) -> RuleState:
+        """단일 룰 토글 — 처리 루프는 다음 frame부터 반영(재시작 불필요).
+
+        Raises:
+            HTTP 400: 알 수 없는 룰 이름.
+        """
+        from fastapi import HTTPException
+
+        toggles: RuleToggles = request.app.state.rule_toggles
+        try:
+            toggles.set_enabled(rule_name, body.enabled)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        return RuleState(name=rule_name, enabled=toggles.is_enabled(rule_name))
 
     @app.get("/control/audit-log/recent", response_model=AuditLogResponse)
     async def audit_log_recent(request: Request, limit: int = 50) -> AuditLogResponse:
