@@ -271,6 +271,26 @@ class TestValidation:
         with pytest.raises(ValidationError):
             PeakAnalysisConfig(oversample=-1)
 
+    def test_peak_persistence_frames_default(self) -> None:
+        cfg = PeakAnalysisConfig()
+        assert cfg.persistence_frames == 1
+
+    def test_peak_persistence_frames_rejects_zero(self) -> None:
+        with pytest.raises(ValidationError):
+            PeakAnalysisConfig(persistence_frames=0)
+
+    def test_dynamic_range_persistence_frames_default(self) -> None:
+        from mixpilot.config import DynamicRangeAnalysisConfig
+
+        cfg = DynamicRangeAnalysisConfig()
+        assert cfg.persistence_frames == 1
+
+    def test_dynamic_range_persistence_frames_rejects_zero(self) -> None:
+        from mixpilot.config import DynamicRangeAnalysisConfig
+
+        with pytest.raises(ValidationError):
+            DynamicRangeAnalysisConfig(persistence_frames=0)
+
 
 class TestOperatingMode:
     def test_string_values(self) -> None:

@@ -123,6 +123,11 @@ class PeakAnalysisConfig(BaseModel):
     oversample: int = Field(default=4, gt=0)
     """True peak 오버샘플링 배수. ITU-R BS.1770-4 권고는 4."""
 
+    persistence_frames: int = Field(default=1, ge=1)
+    """N 연속 frame 임계 초과 시에만 추천 통과. 1=즉시 발화(필터 부재 동치).
+    라이브에서 짧은 transient(어택·핸들링 노이즈)로 인한 false positive 방지.
+    2~5 권장. processing_loop이 `PersistenceFilter`로 적용."""
+
 
 class LraAnalysisConfig(BaseModel):
     """LRA(EBU R128 Loudness Range) 분석 설정 — ADR-0009.
@@ -215,6 +220,11 @@ class DynamicRangeAnalysisConfig(BaseModel):
 
     silence_threshold_db: float = Field(default=0.5, ge=0.0)
     """DR이 이 미만이면 무음으로 간주 — 평가 스킵."""
+
+    persistence_frames: int = Field(default=1, ge=1)
+    """N 연속 frame 임계 밖일 때만 추천 통과. 1=즉시 발화(필터 부재 동치).
+    악기·보컬 어택의 일시적 DR 변동으로 인한 false positive 방지. 2~5 권장.
+    processing_loop이 `PersistenceFilter`로 적용."""
 
 
 class FeedbackAnalysisConfig(BaseModel):
