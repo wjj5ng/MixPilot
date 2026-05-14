@@ -1,0 +1,33 @@
+# 합성 8채널 wav를 끝까지 재생해 추천 패턴 회귀 검증.
+#
+# 첫 회귀 케이스 — 실 service wav 도착 전 *러너 자체*가 안정 동작하는지 확인.
+# 운영자가 실 service wav를 추가하면 본 파일을 템플릿으로 새 케이스 작성.
+
+id: synthetic-multich-baseline
+description: |
+  evals/fixtures/test-multich-4s.wav(8ch, 반음 계단 사인) 재생 →
+  feedback·peak·loudness 룰이 활성 상태에서 발화 빈도 검증. 합성 신호라
+  실 service의 패턴과는 다름 — 본 케이스는 *러너의 동작 검증*이 주 목적.
+
+wav_path: ../fixtures/test-multich-4s.wav
+sample_rate: 48000
+num_channels: 8
+block_size: 512
+
+# 활성 룰. 회귀 노이즈 줄이려면 *최소 필요한 것*만.
+rules_enabled:
+  - loudness
+  - peak
+  - feedback
+
+expected:
+  # 4초 wav × 8 채널 × loudness 매 frame × feedback 매 frame → 수천 발화.
+  # 합성 신호 특성 — 정상이 *의외로 많이 잡힘*. max를 현실값으로.
+  min_recommendation_count: 1
+  max_recommendation_count: 10000
+
+  # 합성 1 kHz 톤은 하울링 임계(PNR 15 dB, persistence 3) 초과해 feedback 발화.
+  # 의도된 동작 — 합성 신호의 한계. 실 service에서는 절대로 발화되면 안 되는 룰.
+  kinds_present:
+    - feedback_alert
+    - info
