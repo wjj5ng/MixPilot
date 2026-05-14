@@ -346,6 +346,101 @@ class TestRulesEndpoint:
         assert states["loudness"] is False
 
 
+class TestOperatingModeEndpoint:
+    """GET/PUT /control/operating-mode — 평상시 모드 토글."""
+
+    def test_get_without_controller_returns_config_default(
+        self, client: TestClient
+    ) -> None:
+        # audio.enabled=False(디폴트) → controller 없음 → config의 m32 모드.
+        response = client.get("/control/operating-mode")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["mode"] == "dry-run"  # M32Config 디폴트
+        assert body["kill_switch_engaged"] is False
+
+    def test_put_without_controller_returns_503(self, client: TestClient) -> None:
+        response = client.put("/control/operating-mode", json={"mode": "assist"})
+        assert response.status_code == 503
+        assert "controller" in response.json()["detail"]
+
+    def test_put_invalid_mode_rejected(self) -> None:
+
+        # controller 주입 위해 직접 app.state 세팅.
+        app = create_app(settings=Settings())
+
+        # 가짜 controller — fastapi가 그대로 받음.
+        class FakeController:
+            def __init__(self) -> None:
+                self._kill = False
+
+            @property
+            def effective_mode(self):
+                from mixpilot.config import OperatingMode
+
+                return OperatingMode.DRY_RUN
+
+            @property
+            def kill_switch_engaged(self) -> bool:
+                return self._kill
+
+            def set_operating_mode(self, mode) -> None:
+                pass
+
+        app.state.controller = FakeController()
+        client = TestClient(app)
+        with client:
+            response = client.put("/control/operating-mode", json={"mode": "ludicrous"})
+        assert response.status_code == 400
+        assert "invalid mode" in response.json()["detail"]
+
+    def test_put_valid_mode_updates(self) -> None:
+        from mixpilot.config import M32Config, OperatingMode
+        from mixpilot.infra.m32_control import M32OscController
+
+        app = create_app(settings=Settings())
+
+        class FakeOsc:
+            def send_message(self, *_args, **_kwargs) -> None:
+                pass
+
+        controller = M32OscController(M32Config(), osc_client=FakeOsc())
+        app.state.controller = controller
+        client = TestClient(app)
+        with client:
+            response = client.put("/control/operating-mode", json={"mode": "assist"})
+        assert response.status_code == 200
+        body = response.json()
+        assert body["mode"] == "assist"
+        assert body["kill_switch_engaged"] is False
+        assert controller.effective_mode is OperatingMode.ASSIST
+
+    def test_put_blocked_after_kill_switch(self) -> None:
+        from mixpilot.config import M32Config
+        from mixpilot.infra.m32_control import M32OscController
+
+        app = create_app(settings=Settings())
+
+        class FakeOsc:
+            def send_message(self, *_args, **_kwargs) -> None:
+                pass
+
+        controller = M32OscController(M32Config(), osc_client=FakeOsc())
+        app.state.controller = controller
+        client = TestClient(app)
+        with client:
+            # 킬 스위치 발동.
+            client.post("/control/dry-run")
+            # 평상시 모드 변경은 409 거부.
+            response = client.put("/control/operating-mode", json={"mode": "assist"})
+            assert response.status_code == 409
+            assert "kill switch" in response.json()["detail"]
+            # GET은 여전히 동작 + kill_switch_engaged=True.
+            state = client.get("/control/operating-mode").json()
+            assert state["mode"] == "dry-run"
+            assert state["kill_switch_engaged"] is True
+
+
 class TestAuditLogEndpoint:
     """ADR-0008 §3 — GET /control/audit-log/recent."""
 

@@ -132,6 +132,19 @@ class RuleToggleRequest(BaseModel):
     enabled: bool
 
 
+class OperatingModeRequest(BaseModel):
+    """`PUT /control/operating-mode` 요청 body — 평상시 모드 토글."""
+
+    mode: str  # 'dry-run' | 'assist' | 'auto'
+
+
+class OperatingModeState(BaseModel):
+    """현재 운영 모드 상태 — endpoint 응답 + 상태 카드 표시용."""
+
+    mode: str
+    kill_switch_engaged: bool
+
+
 class ChannelMeter(BaseModel):
     """단일 채널 미터 — 라벨·카테고리·RMS·peak·LRA·옥타브 스펙트럼."""
 

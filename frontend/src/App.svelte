@@ -6,9 +6,11 @@
     fetchAuditLog,
     fetchChannelMap,
     fetchHealth,
+    fetchOperatingMode,
     fetchRecentActions,
     fetchRules,
     forceDryRun,
+    setOperatingMode,
     setRuleEnabled,
     subscribeMeters,
     subscribeRecommendations,
@@ -18,6 +20,7 @@
     type ChannelMapEntry,
     type ChannelMeter,
     type HealthResponse,
+    type OperatingModeState,
     type RecommendationPayload,
     type RuleState,
   } from "./lib/api";
@@ -46,6 +49,9 @@
   let rules = $state<RuleState[]>([]);
   let rulesError = $state<string | null>(null);
   let rulesBusy = $state<Set<string>>(new Set());
+  let operatingMode = $state<OperatingModeState | null>(null);
+  let operatingModeError = $state<string | null>(null);
+  let operatingModeBusy = $state(false);
 
   const MAX_VISIBLE_RECS = 50;
   const RECENT_ACTIONS_POLL_MS = 5_000;
@@ -83,6 +89,28 @@
       channelMapError = null;
     } catch (e) {
       channelMapError = String(e);
+    }
+  }
+
+  async function refreshOperatingMode(): Promise<void> {
+    try {
+      operatingMode = await fetchOperatingMode();
+      operatingModeError = null;
+    } catch (e) {
+      operatingModeError = String(e);
+    }
+  }
+
+  async function changeOperatingMode(mode: string): Promise<void> {
+    if (operatingModeBusy) return;
+    operatingModeBusy = true;
+    operatingModeError = null;
+    try {
+      operatingMode = await setOperatingMode(mode);
+    } catch (e) {
+      operatingModeError = String(e);
+    } finally {
+      operatingModeBusy = false;
     }
   }
 
@@ -186,8 +214,9 @@
     try {
       const data = await forceDryRun();
       killSwitchStatus = `${data.status}${data.effective_mode ? ` (mode=${data.effective_mode})` : ""}`;
-      // health도 새로고침 — operating_mode 표시 갱신.
+      // 상태 갱신 — 모드 토글 비활성화 + kill_switch_engaged=true 반영.
       health = await fetchHealth();
+      await refreshOperatingMode();
     } catch (e) {
       killSwitchStatus = `오류: ${String(e)}`;
     } finally {
@@ -209,6 +238,7 @@
 
     await refreshChannelMap();
     await refreshRules();
+    await refreshOperatingMode();
 
     unsubscribe = subscribeRecommendations(
       (rec) => {
@@ -365,7 +395,34 @@
       <p class="error">백엔드 연결 실패: {healthError}</p>
     {:else if health}
       <dl>
-        <dt>운영 모드</dt><dd>{health.operating_mode}</dd>
+        <dt>운영 모드</dt>
+        <dd class="mode-cell">
+          {#if operatingMode}
+            <div
+              class="mode-toggle"
+              role="group"
+              aria-label="운영 모드"
+              class:locked={operatingMode.kill_switch_engaged}
+            >
+              {#each ["dry-run", "assist", "auto"] as m (m)}
+                <button
+                  class="mode-btn"
+                  class:active={operatingMode.mode === m}
+                  disabled={operatingModeBusy || operatingMode.kill_switch_engaged}
+                  onclick={() => changeOperatingMode(m)}
+                >{m}</button>
+              {/each}
+            </div>
+            {#if operatingMode.kill_switch_engaged}
+              <span class="kill-active">🛑 킬 스위치 활성 — 재시작 필요</span>
+            {/if}
+            {#if operatingModeError}
+              <span class="error-inline">{operatingModeError}</span>
+            {/if}
+          {:else}
+            <span>{health.operating_mode}</span>
+          {/if}
+        </dd>
         <dt>샘플레이트</dt><dd>{health.sample_rate} Hz</dd>
         <dt>채널 수</dt><dd>{health.num_channels}</dd>
         <dt>오디오 캡처</dt><dd>{health.audio_enabled ? "활성" : "비활성"}</dd>
@@ -797,6 +854,57 @@
   .stream-status.connected {
     background: #1e3a2e;
     color: #6fcf97;
+  }
+
+  /* 운영 모드 토글 (상태 카드 안) */
+  .mode-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .mode-toggle {
+    display: inline-flex;
+    gap: 0;
+    border: 1px solid #2a2f39;
+    border-radius: 0.25rem;
+    overflow: hidden;
+    width: fit-content;
+  }
+  .mode-toggle.locked {
+    opacity: 0.5;
+  }
+  .mode-btn {
+    background: #1a1d24;
+    color: #8b95a3;
+    border: none;
+    border-right: 1px solid #2a2f39;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.75rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+  }
+  .mode-btn:last-child {
+    border-right: none;
+  }
+  .mode-btn:hover:not(:disabled):not(.active) {
+    background: #232730;
+    color: #c8cdd6;
+  }
+  .mode-btn.active {
+    background: #1e3a5f;
+    color: #aac4ff;
+  }
+  .mode-btn:disabled {
+    cursor: not-allowed;
+  }
+  .kill-active {
+    color: #ff9a9a;
+    font-size: 0.75rem;
+  }
+  .error-inline {
+    color: #ff7676;
+    font-size: 0.75rem;
   }
 
   /* 채널 시계열 카드 */

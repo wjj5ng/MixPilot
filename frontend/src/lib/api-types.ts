@@ -196,6 +196,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/control/operating-mode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Operating Mode
+         * @description 현재 운영 모드 + 킬 스위치 active 여부.
+         *
+         *     controller가 없으면(audio 비활성) config의 디폴트 모드를 반환하고
+         *     kill_switch_engaged=False.
+         */
+        get: operations["get_operating_mode_control_operating_mode_get"];
+        /**
+         * Update Operating Mode
+         * @description 평상시 운영 모드 토글 — dry-run/assist/auto.
+         *
+         *     Raises:
+         *         HTTP 400: 알 수 없는 mode.
+         *         HTTP 409: 킬 스위치 active 상태에서 호출 — 재시작 강제.
+         *         HTTP 503: controller 없음(audio 비활성).
+         */
+        put: operations["update_operating_mode_control_operating_mode_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/recommendations": {
         parameters: {
             query?: never;
@@ -424,6 +456,24 @@ export interface components {
             capture_seq: number;
             /** Channels */
             channels: components["schemas"]["ChannelMeter"][];
+        };
+        /**
+         * OperatingModeRequest
+         * @description `PUT /control/operating-mode` 요청 body — 평상시 모드 토글.
+         */
+        OperatingModeRequest: {
+            /** Mode */
+            mode: string;
+        };
+        /**
+         * OperatingModeState
+         * @description 현재 운영 모드 상태 — endpoint 응답 + 상태 카드 표시용.
+         */
+        OperatingModeState: {
+            /** Mode */
+            mode: string;
+            /** Kill Switch Engaged */
+            kill_switch_engaged: boolean;
         };
         /**
          * OscMessage
@@ -715,6 +765,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ControlResponse"];
+                };
+            };
+        };
+    };
+    get_operating_mode_control_operating_mode_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperatingModeState"];
+                };
+            };
+        };
+    };
+    update_operating_mode_control_operating_mode_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperatingModeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OperatingModeState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

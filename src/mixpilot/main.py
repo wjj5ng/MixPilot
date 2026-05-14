@@ -39,6 +39,8 @@ from mixpilot.api.schemas import (
     ControlResponse,
     HealthResponse,
     MeterSnapshotEvent,
+    OperatingModeRequest,
+    OperatingModeState,
     OscMessage,
     RecentActionsResponse,
     RecommendationEvent,
@@ -46,7 +48,7 @@ from mixpilot.api.schemas import (
     RuleState,
     RuleToggleRequest,
 )
-from mixpilot.config import AudioSource, Settings, get_settings
+from mixpilot.config import AudioSource, OperatingMode, Settings, get_settings
 from mixpilot.domain import (
     Channel,
     ChannelId,
@@ -912,6 +914,57 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         controller.force_dry_run()
         return ControlResponse(
             status="forced dry-run", effective_mode=controller.effective_mode.value
+        )
+
+    @app.get("/control/operating-mode", response_model=OperatingModeState)
+    async def get_operating_mode(request: Request) -> OperatingModeState:
+        """현재 운영 모드 + 킬 스위치 active 여부.
+
+        controller가 없으면(audio 비활성) config의 디폴트 모드를 반환하고
+        kill_switch_engaged=False.
+        """
+        controller = request.app.state.controller
+        if controller is None:
+            mode = request.app.state.settings.m32.operating_mode.value
+            return OperatingModeState(mode=mode, kill_switch_engaged=False)
+        return OperatingModeState(
+            mode=controller.effective_mode.value,
+            kill_switch_engaged=controller.kill_switch_engaged,
+        )
+
+    @app.put("/control/operating-mode", response_model=OperatingModeState)
+    async def update_operating_mode(
+        body: OperatingModeRequest, request: Request
+    ) -> OperatingModeState:
+        """평상시 운영 모드 토글 — dry-run/assist/auto.
+
+        Raises:
+            HTTP 400: 알 수 없는 mode.
+            HTTP 409: 킬 스위치 active 상태에서 호출 — 재시작 강제.
+            HTTP 503: controller 없음(audio 비활성).
+        """
+        from fastapi import HTTPException
+
+        controller = request.app.state.controller
+        if controller is None:
+            raise HTTPException(
+                status_code=503,
+                detail="no controller (audio disabled)",
+            )
+        try:
+            mode = OperatingMode(body.mode)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400, detail=f"invalid mode: {body.mode}"
+            ) from e
+        try:
+            controller.set_operating_mode(mode)
+        except RuntimeError as e:
+            # 킬 스위치 active.
+            raise HTTPException(status_code=409, detail=str(e)) from e
+        return OperatingModeState(
+            mode=controller.effective_mode.value,
+            kill_switch_engaged=controller.kill_switch_engaged,
         )
 
     @app.get(

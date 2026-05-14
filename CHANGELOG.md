@@ -26,6 +26,15 @@ MixPilot의 모든 주목할 만한 변경 사항을 기록합니다.
 
 ### Added (Unreleased, continued)
 
+- **service별 audit log 자동 분리** — `MIXPILOT_AUDIT_LOG_PATH=./logs/audit-%Y%m%d.jsonl`
+  처럼 strftime 패턴을 적으면 서버 가동 시점에 자동 expand + 부모 디렉토리
+  mkdir. 운영자가 매번 환경 변수 손볼 필요 없음.
+
+- **운영 모드 UI 토글** — 상태 카드에 `dry-run / assist / auto` 버튼. PUT
+  `/control/operating-mode`로 평상시 모드 변경 가능. 킬 스위치 active 시
+  HTTP 409로 거부 — 비상 후 *명시적 재시작* 강제(ADR-0008 §3.4 정책 보호).
+  GET `/control/operating-mode`로 현재 모드 + kill_switch_engaged 플래그 조회.
+
 - **운영자 사용 가이드** (`docs/operator-guide.md`) — 음향 운영자가 코드 모르고
   따라할 수 있는 절차서. 시작 전 체크리스트, service 흐름(시작/중/끝), UI 카드
   역할표, 알림 종류별 대응, 트러블슈팅, 사후 회고, 비상 시 안내, 빠른 명령 모음.
