@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import Meters from "./Meters.svelte";
+  import Timeseries from "./Timeseries.svelte";
   import {
     fetchAuditLog,
     fetchChannelMap,
@@ -30,6 +31,14 @@
   let killSwitchBusy = $state(false);
   let meterChannels = $state<ChannelMeter[]>([]);
   let metersConnected = $state(false);
+
+  // 채널별 시계열 ring buffer — App 차원에서 누적, Timeseries 컴포넌트로 전달.
+  // 60초 윈도우 × ~9 Hz ≈ 540 points/channel × 32ch ≈ 17k 숫자 — 가볍다.
+  type SeriesPoint = { t: number; rms: number; peak: number };
+  const TIMESERIES_WINDOW_MS = 120_000; // 2분치 보관(최대 windowSeconds=120).
+  let meterHistory = $state<Map<number, SeriesPoint[]>>(new Map());
+  let selectedTimeseriesChannel = $state<number | null>(null);
+  let timeseriesWindowSec = $state(60);
   let auditEntries = $state<AuditEntry[]>([]);
   let auditEnabled = $state<boolean | null>(null);
   let channelMap = $state<ChannelMapEntry[]>([]);
@@ -216,6 +225,22 @@
       (snapshot) => {
         metersConnected = true;
         meterChannels = snapshot.channels;
+        // 시계열 buffer 누적 — 2분치만 유지.
+        const now = Date.now();
+        const cutoff = now - TIMESERIES_WINDOW_MS;
+        const next = new Map(meterHistory);
+        for (const ch of snapshot.channels) {
+          const arr = next.get(ch.channel) ?? [];
+          arr.push({ t: now, rms: ch.rms_dbfs, peak: ch.peak_dbfs });
+          // 오래된 포인트 제거 (앞에서부터 잘라내기).
+          while (arr.length > 0 && arr[0].t < cutoff) arr.shift();
+          next.set(ch.channel, arr);
+        }
+        meterHistory = next;
+        // 첫 데이터 도달 시 첫 채널을 디폴트 선택.
+        if (selectedTimeseriesChannel === null && snapshot.channels.length > 0) {
+          selectedTimeseriesChannel = snapshot.channels[0].channel;
+        }
       },
       () => {
         metersConnected = false;
@@ -493,6 +518,47 @@
     <Meters channels={meterChannels} />
   </section>
 
+  <section class="card">
+    <h2>
+      채널 시계열
+      <span class="hint-inline">— RMS·Peak dBFS, 최대 2분 누적</span>
+    </h2>
+    {#if meterChannels.length === 0}
+      <p class="hint">미터 스트림이 시작되면 채널을 선택할 수 있습니다.</p>
+    {:else}
+      <div class="ts-controls">
+        <select
+          class="ts-select"
+          bind:value={selectedTimeseriesChannel}
+        >
+          {#each meterChannels as ch (ch.channel)}
+            <option value={ch.channel}>
+              ch{String(ch.channel).padStart(2, "0")} — {ch.label || ch.category}
+            </option>
+          {/each}
+        </select>
+        <div class="filter-group" role="group" aria-label="윈도우">
+          {#each [30, 60, 120] as sec (sec)}
+            <button
+              class="filter-btn"
+              class:active={timeseriesWindowSec === sec}
+              onclick={() => (timeseriesWindowSec = sec)}
+            >{sec}s</button>
+          {/each}
+        </div>
+      </div>
+      {#if selectedTimeseriesChannel !== null}
+        {@const sel = meterChannels.find((c) => c.channel === selectedTimeseriesChannel)}
+        <Timeseries
+          channel={selectedTimeseriesChannel}
+          label={sel?.label ?? ""}
+          points={meterHistory.get(selectedTimeseriesChannel) ?? []}
+          windowSeconds={timeseriesWindowSec}
+        />
+      {/if}
+    {/if}
+  </section>
+
   <section class="card kill-switch">
     <h2>킬 스위치</h2>
     <p class="hint">
@@ -731,6 +797,29 @@
   .stream-status.connected {
     background: #1e3a2e;
     color: #6fcf97;
+  }
+
+  /* 채널 시계열 카드 */
+  .ts-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .ts-select {
+    background: #1a1d24;
+    color: #c8cdd6;
+    border: 1px solid #2a2f39;
+    border-radius: 0.25rem;
+    padding: 0.3rem 0.55rem;
+    font-size: 0.85rem;
+    font-family: inherit;
+    min-width: 14rem;
+  }
+  .ts-select:focus {
+    outline: none;
+    border-color: #2a4a73;
   }
 
   /* 룰 토글 카드 */
