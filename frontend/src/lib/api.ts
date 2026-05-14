@@ -91,7 +91,7 @@ export async function fetchChannelMap(): Promise<ChannelMapResponse> {
   return (await response.json()) as ChannelMapResponse;
 }
 
-/** 단일 채널 매핑 갱신 — YAML 영속, 라이브 루프는 재시작 후 반영. */
+/** 단일 채널 매핑 갱신 — YAML 영속 + 라이브 처리 루프 다음 frame부터 즉시 반영. */
 export async function updateChannel(
   channel: number,
   category: string,

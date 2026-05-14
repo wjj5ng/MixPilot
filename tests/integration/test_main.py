@@ -249,6 +249,30 @@ class TestChannelMapEndpoint:
         assert response.status_code == 400
         assert "invalid category" in response.json()["detail"]
 
+    def test_put_reflected_in_channel_map_immediately(self, tmp_path: Path) -> None:
+        # PUT으로 갱신한 매핑이 처리 루프의 channel_map 인스턴스에도 즉시
+        # 반영되는지 검증 — app.state.channel_map을 직접 조회.
+        channels_path = tmp_path / "channels.yaml"
+        channels_path.write_text(
+            "channels:\n  - id: 1\n    category: vocal\n    label: orig\n",
+            encoding="utf-8",
+        )
+        settings = Settings(channel_map_path=channels_path)
+        app = create_app(settings=settings)
+        client = TestClient(app)
+        with client:
+            client.put(
+                "/channels/1",
+                json={"category": "preacher", "label": "갱신"},
+            )
+            from mixpilot.infra.channel_map import YamlChannelMetadata
+
+            cm: YamlChannelMetadata = app.state.channel_map
+            source = cm.get_source_sync(1)
+        assert source is not None
+        assert source.category.value == "preacher"
+        assert source.label == "갱신"
+
     def test_update_channel_creates_new_id(self, tmp_path: Path) -> None:
         channels_path = tmp_path / "channels.yaml"
         channels_path.write_text("channels: []\n", encoding="utf-8")

@@ -105,6 +105,15 @@ class YamlChannelMetadata:
                 )
         return result
 
+    def get_source_sync(self, ch_id: int) -> Source | None:
+        """채널 ID로 Source 직접 조회 — 동기, 매 frame 핫패스용.
+
+        라이브 처리 루프가 매 frame에서 호출하므로 async가 아닌 sync.
+        내부 캐시는 `update_channel`이 mutate하므로 PUT 직후 다음 호출에
+        즉시 새 값 반환.
+        """
+        return self._load().get(int(ch_id))
+
     async def get_channel_label(self, channel: ChannelId) -> str:
         source = self._load().get(int(channel))
         return source.label if source else ""
@@ -129,9 +138,8 @@ class YamlChannelMetadata:
         자동 갱신, 기존 ch4의 pair가 ch5였다면 그 관계는 끊어진다(ch5의 pair는
         None으로 클리어).
 
-        ⚠️ 라이브 처리 루프는 시작 시 스냅샷한 `sources_by_id`를 사용하므로
-        프로세스 재시작 전까지는 본 변경이 *반영되지 않음*. 호출자는 UI에서
-        명시적으로 안내해야 한다.
+        내부 캐시 mutate + YAML 영속화. 라이브 처리 루프는 `get_source_sync()`로
+        매 frame 캐시를 다시 읽으므로 *다음 frame부터 즉시 반영* — 재시작 불필요.
 
         Returns:
             갱신된 Source 객체.

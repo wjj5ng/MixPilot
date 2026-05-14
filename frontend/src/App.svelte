@@ -400,8 +400,8 @@
       <p class="hint">채널맵이 비어 있습니다 — <code>config/channels.yaml</code> 확인.</p>
     {:else}
       <p class="hint">
-        편집은 즉시 <code>config/channels.yaml</code>에 저장되지만, *라이브
-        처리 루프*는 다음 재시작부터 반영됩니다.
+        편집은 즉시 <code>config/channels.yaml</code>에 저장되고, *라이브
+        처리 루프*도 다음 frame부터 즉시 반영됩니다 (재시작 불필요).
       </p>
       <table class="channel-map">
         <thead>
