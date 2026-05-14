@@ -15,6 +15,9 @@ FFT / LUFS / Peak / Feedback Detection 등 DSP 분석을 기반으로 오디오 
 # Python (백엔드)
 uv sync
 
+# 커밋 게이트 활성화 (1회) — ruff format/check를 자동 검사
+uv run pre-commit install
+
 # Node (프론트엔드)
 npm --prefix frontend install
 ```

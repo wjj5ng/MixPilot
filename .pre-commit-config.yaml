@@ -1,0 +1,37 @@
+# MixPilot pre-commit 훅 — 로컬 ruff 게이트.
+#
+# ruff 버전은 pyproject.toml dev-dep(==0.15.12)에 정확 핀. 본 훅은 그
+# *동일* ruff를 uv 통해 호출하므로 결정성 보장:
+#   pyproject.toml ──┐
+#                    ├── 단일 진실원: ruff 0.15.12
+#   uv.lock ─────────┘
+#       │
+#       ├── pre-commit (커밋 시점)
+#       ├── CI (.github/workflows/ci.yml)
+#       └── 개발자 수동 실행
+#
+# 설치 (한 번만):
+#   uv sync
+#   uv run pre-commit install
+#
+# 수동 전체 실행:
+#   uv run pre-commit run --all-files
+
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-format
+        name: ruff format (check)
+        entry: uv run ruff format --check
+        language: system
+        types_or: [python]
+        require_serial: true
+        pass_filenames: false
+
+      - id: ruff-check
+        name: ruff lint
+        entry: uv run ruff check
+        language: system
+        types_or: [python]
+        require_serial: true
+        pass_filenames: false
