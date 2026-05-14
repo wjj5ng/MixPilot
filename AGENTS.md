@@ -38,6 +38,8 @@ FFT, LUFS, Peak, RMS, Dynamic Range, Feedback Detection 등의 DSP 분석을 기
 | 백엔드 테스트+커버리지 | `uv run pytest --cov=src/mixpilot --cov-report=term-missing` |
 | 백엔드 포맷 | `uv run ruff format .` |
 | 백엔드 린트 | `uv run ruff check --fix .` |
+| pre-commit 훅 설치(1회) | `uv run pre-commit install` |
+| pre-commit 전체 실행 | `uv run pre-commit run --all-files` |
 | 백엔드 개발 서버 | `uv run fastapi dev src/mixpilot/main.py` |
 | 백엔드 프로덕션 | `uv run uvicorn mixpilot.main:app --host 0.0.0.0 --port 8000` |
 | 프론트 의존성 설치 | `npm --prefix frontend install` |
@@ -85,7 +87,10 @@ ARCHITECTURE.md                # 모듈 경계·의존성 방향
 - **함수형 우선**: DSP 분석 함수는 *순수 함수* 우선 — `(np.ndarray, params) → metrics`. 부수효과(파일·소켓·DB)는 `infra/`에만.
 - **에러 처리**: 외부 입력(API 바디·오디오 스트림)만 검증. 내부 호출은 신뢰. 보안·신호 무결성 경계에서만 raise.
 - **실시간 코드 주의**: DSP 핫패스에서는 메모리 할당 최소화(`np.empty`·재사용), GIL 영향 줄이려 `numpy`·`scipy` 벡터화 우선, 필요 시 `numba`/`cython` 검토.
-- **포맷·린트**: ruff. 편집 후 자동 실행되도록 훅 설정됨(`.claude/settings.json`).
+- **포맷·린트**: ruff. 버전은 `pyproject.toml` dev-dep에 정확 핀(`==0.15.12`)
+  — pre-commit·CI·로컬 모두 동일 버전. 편집 시 Claude Code 훅이 자동
+  실행(`.claude/settings.json`)되고, 커밋 시점에 `pre-commit` 훅이 *최종
+  게이트*. ruff bump은 의도적 PR로만 (의도하지 않은 format drift 차단).
 - **커밋 메시지**: 한국어로 작성. 타입 prefix(`feat:` / `fix:` / `chore:` / `docs:` / `refactor:` / `test:` 등)는 영문 컨벤션 유지하되, subject 설명·body·footer는 한국어로. 예: `feat(domain): 도메인 모델·포트 정의 추가`.
 
 ## Architecture

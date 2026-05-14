@@ -25,9 +25,12 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
+    "pre-commit>=4.0.1",
     "pytest>=9.0.3",
     "pytest-cov>=7.1.0",
-    "ruff>=0.15.12",
+    # ruff는 *정확 버전 핀* — format 규칙은 마이너 버전 사이에 바뀔 수 있어
+    # CI/로컬/협업자 환경 모두 동일 버전 보장해야 결정적. bump 시 의도적 PR로.
+    "ruff==0.15.12",
 ]
 
 [tool.pytest.ini_options]
