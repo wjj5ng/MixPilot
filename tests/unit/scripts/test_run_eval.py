@@ -475,6 +475,45 @@ class TestFeedbackCase:
         assert "unknown assert phrasing" in results[0].reason
 
 
+class TestTwoLevelSine:
+    def test_two_segments_concatenated(self) -> None:
+        params = {
+            "sample_rate": 48000,
+            "frequency_hz": 1000,
+            "amplitude_a": 0.5,
+            "duration_a_seconds": 0.1,
+            "amplitude_b": 0.1,
+            "duration_b_seconds": 0.2,
+        }
+        sig = run_eval._generate_two_level_sine(params)
+        n_a = int(0.1 * 48000)
+        n_b = int(0.2 * 48000)
+        assert sig.shape == (n_a + n_b,)
+        # 첫 segment의 amplitude envelope.
+        assert np.max(np.abs(sig[:n_a])) == pytest.approx(0.5, abs=0.001)
+        # 두 번째 segment의 amplitude envelope.
+        assert np.max(np.abs(sig[n_a:])) == pytest.approx(0.1, abs=0.001)
+
+    def test_via_dispatch_table(self) -> None:
+        # _SIGNAL_GENERATORS에 등록되어 case 흐름으로도 동작.
+        case = {
+            "id": "two-level",
+            "input": {
+                "kind": "two_level_sine",
+                "sample_rate": 48000,
+                "frequency_hz": 1000,
+                "amplitude_a": 0.5,
+                "duration_a_seconds": 5.0,
+                "amplitude_b": 0.05,
+                "duration_b_seconds": 5.0,
+            },
+            "expected": {"value": 20.0, "tolerance_abs": 0.5},
+        }
+        # LRA 함수로 통과시켜 20 dB 차이가 ~ 20 LU로 잡히는지.
+        result = run_eval.run_case("mixpilot.dsp.lra.lra", case)
+        assert result.passed
+
+
 class TestSignalGeneratorsExtended:
     def test_sine_with_num_samples(self) -> None:
         signal = run_eval._generate_sine(

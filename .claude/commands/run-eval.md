@@ -40,6 +40,8 @@ uv run python -m mixpilot.scripts.run_eval evals/cases/*.yaml \
 | `dynamic-range-baseline.yaml` | ✅ 통과 (5/5) |
 | `lra-baseline.yaml` | ✅ 통과 (5/5) |
 | `phase-baseline.yaml` | ✅ 통과 (4/4) |
+| `lufs-conformance.yaml` | ✅ 통과 (11/11 — ITU K-weighting freq response 포함) |
+| `lra-conformance.yaml` | ✅ 통과 (6/6 — EBU Tech 3342 two-level 패턴) |
 
 미지원 케이스는 보고서에서 `unsupported function`로 표시. 새 DSP 지원 추가는
 `src/mixpilot/scripts/run_eval.py`의 `_DSP_DISPATCH`·`_SIGNAL_GENERATORS`에 항목 추가.

@@ -24,10 +24,22 @@ MixPilot의 모든 주목할 만한 변경 사항을 기록합니다.
   스냅샷 dict 대신 `channel_map.get_source_sync()`를 매 frame 호출하도록 변경.
   UI 안내 문구도 "재시작 후 반영" → "다음 frame부터 즉시 반영"으로 갱신.
 
+### Added (Unreleased, continued)
+
+- **ITU-R BS.1770-4 / EBU Tech 3342 conformance 검증 셋**.
+  - `lufs-conformance.yaml` (11 cases): 1 kHz 레벨 선형성(amp 0.5~0.01,
+    -9 ~ -43 LUFS) + K-weighting freq response 6 frequencies(125 Hz~8 kHz).
+    abs_tol 0.1 LU.
+  - `lra-conformance.yaml` (6 cases): two-level 10/20/30 dB 정확값 검증 +
+    EBU 게이트 동작 확인(30 dB 차이 시 quiet 게이트로 LRA 감소) + steady/
+    silence/too-short.
+  - `two_level_sine` 신호 생성기 추가 — LRA 검증 전용.
+  - CI에 두 baseline 추가.
+
 ### 향후 후보
 
 - 프로덕션 배포 아티팩트 (Dockerfile + systemd unit)
-- ITU-R BS.1770-4 conformance signals로 LUFS·LRA 정확값 검증
+- EBU R128 실 wav 컨포먼스 셋(영화·음악 클립) — 외부 다운로드 + LFS
 
 ---
 

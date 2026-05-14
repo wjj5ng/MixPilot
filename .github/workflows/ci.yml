@@ -47,7 +47,9 @@ jobs:
             evals/cases/feedback-baseline.yaml \
             evals/cases/dynamic-range-baseline.yaml \
             evals/cases/lra-baseline.yaml \
-            evals/cases/phase-baseline.yaml
+            evals/cases/phase-baseline.yaml \
+            evals/cases/lufs-conformance.yaml \
+            evals/cases/lra-conformance.yaml
 
   frontend:
     name: Frontend (typecheck·build)

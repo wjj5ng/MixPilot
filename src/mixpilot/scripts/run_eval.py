@@ -113,6 +113,29 @@ def _generate_impulse(params: Mapping[str, Any]) -> np.ndarray:
     return signal
 
 
+def _generate_two_level_sine(params: Mapping[str, Any]) -> np.ndarray:
+    """단일 주파수의 두 amplitude segment를 시간적으로 연결 — LRA 검증용.
+
+    `kind: two_level_sine`, params:
+      sample_rate, frequency_hz,
+      amplitude_a, duration_a_seconds,
+      amplitude_b, duration_b_seconds.
+    """
+    sr = int(params["sample_rate"])
+    freq = float(params["frequency_hz"])
+    amp_a = float(params["amplitude_a"])
+    amp_b = float(params["amplitude_b"])
+    dur_a = float(params["duration_a_seconds"])
+    dur_b = float(params["duration_b_seconds"])
+    n_a = int(dur_a * sr)
+    n_b = int(dur_b * sr)
+    t_a = np.arange(n_a) / sr
+    t_b = np.arange(n_b) / sr
+    seg_a = (amp_a * np.sin(2 * np.pi * freq * t_a)).astype(np.float64)
+    seg_b = (amp_b * np.sin(2 * np.pi * freq * t_b)).astype(np.float64)
+    return np.concatenate([seg_a, seg_b])
+
+
 def _generate_stereo_sine(params: Mapping[str, Any]) -> np.ndarray:
     """동일 주파수의 두 사인을 stereo 페어로 — left_phase_shift만큼 R 위상 차.
 
@@ -142,6 +165,7 @@ _SIGNAL_GENERATORS: dict[str, Callable[[Mapping[str, Any]], np.ndarray]] = {
     "white_noise": _generate_white_noise,
     "stereo_sine": _generate_stereo_sine,
     "stereo_silence": _generate_stereo_silence,
+    "two_level_sine": _generate_two_level_sine,
 }
 
 
