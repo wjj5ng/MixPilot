@@ -1,25 +1,41 @@
 ---
-description: evals/cases/를 순회하여 평가를 실행하고 결과를 evals/results/<timestamp>/에 기록.
-argument-hint: [--case=<glob>] [--out=<path>]
+description: evals/cases/의 YAML 케이스를 실행하여 DSP 회귀 검증. 결과를 표준 출력으로 보고.
+argument-hint: [<yaml-path>...]
 ---
 
-`evals/cases/`의 평가 케이스를 실행하고, 결과를 `evals/results/<timestamp>/`에 기록합니다.
+`evals/cases/`의 평가 케이스를 실제로 실행하는 슬래시 명령. 내부적으로
+`mixpilot.scripts.run_eval` CLI를 호출합니다.
 
-## 동작 골격 (TODO: 프로젝트 결정에 맞춰 구현)
+## 사용
 
-1. `evals/cases/`에서 `*.json` 또는 `*.yaml` 케이스 파일 수집.
-2. 각 케이스에 대해:
-   - 입력을 모델/엔드포인트에 전달
-   - 출력을 기대값과 비교 (정확 일치 / 의미 유사 / LLM-as-judge 등)
-   - 결과를 `evals/results/<timestamp>/<case-id>.json`에 기록
-3. 요약 출력:
-   - 통과/실패/스킵 수
-   - 회귀(이전 결과 대비) 항목
-   - 비용·지연 메트릭
+```bash
+# 단일 케이스 파일
+uv run python -m mixpilot.scripts.run_eval evals/cases/rms-baseline.yaml
 
-## 골격 코드 위치
+# 여러 개 (glob)
+uv run python -m mixpilot.scripts.run_eval evals/cases/*.yaml
+```
 
-<!-- TODO: 평가 러너 경로 채우기. 예: `evals/runner.py` 또는 `uv run python -m evals` -->
+## 동작
+
+1. YAML 파일의 `function_under_test`(dotted path)를 dispatch 테이블에서 조회.
+2. 각 `cases[*]`에 대해:
+   - `input.kind`(sine/dc/silence/impulse)로 신호 합성
+   - DSP 함수 호출
+   - `expected.value` ± `tolerance_abs` / `tolerance_rel`로 통과 판정
+3. 케이스별 ✅/❌ 출력 + 어느 하나라도 실패하면 exit 1.
+
+## 지원 범위 (점진 확장)
+
+| YAML 케이스 | 상태 |
+|---|---|
+| `rms-baseline.yaml` | ✅ 통과 |
+| `lufs-baseline.yaml` | ⏳ dispatch 미등록 |
+| `peak-baseline.yaml` | ⏳ dispatch 미등록 |
+| `feedback-baseline.yaml` | ⏳ dispatch 미등록 |
+
+미지원 케이스는 보고서에서 `unsupported function`로 표시. 새 DSP 지원 추가는
+`src/mixpilot/scripts/run_eval.py`의 `_DSP_DISPATCH`·`_SIGNAL_GENERATORS`에 항목 추가.
 
 ## 평가 셋 설계
 
