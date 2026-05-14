@@ -14,6 +14,10 @@ uv run python -m mixpilot.scripts.run_eval evals/cases/rms-baseline.yaml
 
 # 여러 개 (glob)
 uv run python -m mixpilot.scripts.run_eval evals/cases/*.yaml
+
+# 결과를 영속화 — evals/results/<UTC timestamp>/<name>.json
+uv run python -m mixpilot.scripts.run_eval evals/cases/*.yaml \
+  --output-dir evals/results
 ```
 
 ## 동작

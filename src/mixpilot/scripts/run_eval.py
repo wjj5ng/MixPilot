@@ -24,10 +24,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import re
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -200,13 +202,8 @@ def _evaluate_expected(
             return False, summary, f"delta={actual_delta:.6g} differs from expected"
         return True, summary, ""
 
-    return (
-        False,
-        "<unknown expected schema>",
-        (
-            "expected has no recognized field (value | value_range | delta_from | raises)"
-        ),
-    )
+    msg = "expected has no recognized field (value | value_range | delta_from | raises)"
+    return False, "<unknown expected schema>", msg
 
 
 def run_case(
@@ -642,6 +639,31 @@ def _format_report(file_path: Path, results: list[CaseResult]) -> str:
     return "\n".join(lines)
 
 
+def _write_results_json(
+    output_dir: Path,
+    yaml_path: Path,
+    results: list[CaseResult],
+    timestamp: str,
+) -> Path:
+    """결과를 `<output_dir>/<timestamp>/<yaml_stem>.json`로 저장하고 경로 반환."""
+    target_dir = output_dir / timestamp
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_file = target_dir / f"{yaml_path.stem}.json"
+    payload = {
+        "yaml_path": str(yaml_path),
+        "timestamp": timestamp,
+        "total": len(results),
+        "passed": sum(1 for r in results if r.passed),
+        "failed": sum(1 for r in results if not r.passed),
+        "results": [asdict(r) for r in results],
+    }
+    target_file.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return target_file
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run MixPilot eval cases.")
     parser.add_argument(
@@ -650,12 +672,26 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         help="YAML 파일 경로(여러 개 가능).",
     )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help=(
+            "결과 JSON 저장 루트. 지정 시 `<output-dir>/<timestamp>/<name>.json`. "
+            "미지정이면 표준 출력만."
+        ),
+    )
     args = parser.parse_args(argv)
+
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
     any_failed = False
     for path in args.paths:
         results = run_yaml_file(path)
         print(_format_report(path, results))
+        if args.output_dir is not None:
+            saved = _write_results_json(args.output_dir, path, results, timestamp)
+            print(f"  → wrote {saved}")
         if any(not r.passed for r in results):
             any_failed = True
     return 1 if any_failed else 0

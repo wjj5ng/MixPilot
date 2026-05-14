@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import textwrap
 from pathlib import Path
 
@@ -549,6 +550,60 @@ class TestMain:
         )
         exit_code = run_eval.main([str(path)])
         assert exit_code == 0
+
+    def test_main_writes_results_json(self, tmp_path: Path) -> None:
+        rms_path = (
+            Path(__file__).resolve().parents[3]
+            / "evals"
+            / "cases"
+            / "rms-baseline.yaml"
+        )
+        out_dir = tmp_path / "results"
+        exit_code = run_eval.main([str(rms_path), "--output-dir", str(out_dir)])
+        assert exit_code == 0
+        # 정확히 하나의 timestamp 디렉토리.
+        timestamp_dirs = list(out_dir.iterdir())
+        assert len(timestamp_dirs) == 1
+        # 그 안에 rms-baseline.json.
+        result_files = list(timestamp_dirs[0].iterdir())
+        assert len(result_files) == 1
+        assert result_files[0].name == "rms-baseline.json"
+        payload = json.loads(result_files[0].read_text(encoding="utf-8"))
+        assert payload["total"] == 4
+        assert payload["passed"] == 4
+        assert payload["failed"] == 0
+        assert len(payload["results"]) == 4
+        assert all(r["passed"] for r in payload["results"])
+
+    def test_main_failed_run_still_writes_json(self, tmp_path: Path) -> None:
+        bad = tmp_path / "bad.yaml"
+        bad.write_text(
+            textwrap.dedent(
+                """\
+                id: bad-set
+                function_under_test: mixpilot.dsp.rms.rms
+                cases:
+                  - id: wrong-expected
+                    input:
+                      kind: silence
+                      sample_rate: 48000
+                      duration_seconds: 0.1
+                    expected:
+                      value: 0.5
+                      tolerance_abs: 1.0e-9
+                """
+            ),
+            encoding="utf-8",
+        )
+        out_dir = tmp_path / "results"
+        exit_code = run_eval.main([str(bad), "--output-dir", str(out_dir)])
+        assert exit_code == 1
+        # 실패한 실행도 결과는 영속화됨.
+        timestamp_dirs = list(out_dir.iterdir())
+        assert len(timestamp_dirs) == 1
+        payload = json.loads((timestamp_dirs[0] / "bad.json").read_text("utf-8"))
+        assert payload["failed"] == 1
+        assert payload["results"][0]["passed"] is False
 
     def test_main_fails_when_any_case_fails(self, tmp_path: Path) -> None:
         bad = tmp_path / "bad.yaml"
