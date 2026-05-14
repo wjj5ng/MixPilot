@@ -15,6 +15,8 @@ export type RecommendationPayload = components["schemas"]["RecommendationEvent"]
 export type ControlResponse = components["schemas"]["ControlResponse"];
 export type ActionEntry = components["schemas"]["ActionEntry"];
 export type RecentActionsResponse = components["schemas"]["RecentActionsResponse"];
+export type MeterSnapshot = components["schemas"]["MeterSnapshotEvent"];
+export type ChannelMeter = components["schemas"]["ChannelMeter"];
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -63,6 +65,26 @@ export function subscribeRecommendations(
       onMessage(data);
     } catch (e) {
       console.warn("invalid recommendation payload", event.data, e);
+    }
+  });
+  if (onError) {
+    source.addEventListener("error", onError);
+  }
+  return () => source.close();
+}
+
+/** /meters SSE 구독 — 채널별 RMS·peak dBFS 스냅샷. */
+export function subscribeMeters(
+  onMessage: (snapshot: MeterSnapshot) => void,
+  onError?: (err: Event) => void,
+): () => void {
+  const source = new EventSource(`${API_BASE_URL}/meters`);
+  source.addEventListener("message", (event) => {
+    try {
+      const data = JSON.parse(event.data) as MeterSnapshot;
+      onMessage(data);
+    } catch (e) {
+      console.warn("invalid meter payload", event.data, e);
     }
   });
   if (onError) {

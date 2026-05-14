@@ -96,6 +96,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/meters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream Meters
+         * @description 채널별 RMS·peak dBFS 스트림.
+         *
+         *     `meter_stream.enabled`가 false면 연결은 성립하되 데이터 이벤트가
+         *     생기지 않는다(keep-alive만 송신).
+         */
+        get: operations["stream_meters_meters_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -115,6 +138,18 @@ export interface components {
             osc_messages: components["schemas"]["OscMessage"][];
             /** Reason */
             reason: string;
+        };
+        /**
+         * ChannelMeter
+         * @description 단일 채널의 미터 스냅샷 — RMS·peak를 dBFS로.
+         */
+        ChannelMeter: {
+            /** Channel */
+            channel: number;
+            /** Rms Dbfs */
+            rms_dbfs: number;
+            /** Peak Dbfs */
+            peak_dbfs: number;
         };
         /**
          * ControlResponse
@@ -149,6 +184,21 @@ export interface components {
             peak_analysis_enabled: boolean;
             /** Dynamic Range Analysis Enabled */
             dynamic_range_analysis_enabled: boolean;
+            /** Meter Stream Enabled */
+            meter_stream_enabled: boolean;
+        };
+        /**
+         * MeterSnapshotEvent
+         * @description `/meters` SSE 스트림의 단일 이벤트 페이로드.
+         *
+         *     한 프레임의 채널별 미터값 묶음. 클라이언트는 capture_seq를 보고 누락
+         *     여부를 추적 가능 (단조 증가).
+         */
+        MeterSnapshotEvent: {
+            /** Capture Seq */
+            capture_seq: number;
+            /** Channels */
+            channels: components["schemas"]["ChannelMeter"][];
         };
         /**
          * OscMessage
@@ -280,6 +330,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecommendationEvent"];
+                    "text/event-stream": unknown;
+                };
+            };
+        };
+    };
+    stream_meters_meters_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Server-Sent Events 스트림. 각 'data:' 라인 본문이 MeterSnapshotEvent JSON. 미터는 throttled (`meter_stream.publish_interval_frames`). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeterSnapshotEvent"];
                     "text/event-stream": unknown;
                 };
             };

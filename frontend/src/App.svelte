@@ -1,11 +1,14 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
+  import Meters from "./Meters.svelte";
   import {
     fetchHealth,
     fetchRecentActions,
     forceDryRun,
+    subscribeMeters,
     subscribeRecommendations,
     type ActionEntry,
+    type ChannelMeter,
     type HealthResponse,
     type RecommendationPayload,
   } from "./lib/api";
@@ -17,11 +20,14 @@
   let recentActions = $state<ActionEntry[]>([]);
   let killSwitchStatus = $state<string | null>(null);
   let killSwitchBusy = $state(false);
+  let meterChannels = $state<ChannelMeter[]>([]);
+  let metersConnected = $state(false);
 
   const MAX_VISIBLE_RECS = 50;
   const RECENT_ACTIONS_POLL_MS = 5_000;
 
   let unsubscribe: (() => void) | null = null;
+  let unsubscribeMeters: (() => void) | null = null;
   let recentActionsTimer: ReturnType<typeof setInterval> | null = null;
 
   async function refreshRecentActions(): Promise<void> {
@@ -67,10 +73,21 @@
         streamConnected = false;
       },
     );
+
+    unsubscribeMeters = subscribeMeters(
+      (snapshot) => {
+        metersConnected = true;
+        meterChannels = snapshot.channels;
+      },
+      () => {
+        metersConnected = false;
+      },
+    );
   });
 
   onDestroy(() => {
     if (unsubscribe) unsubscribe();
+    if (unsubscribeMeters) unsubscribeMeters();
     if (recentActionsTimer !== null) clearInterval(recentActionsTimer);
   });
 
@@ -108,10 +125,21 @@
         <dt>Feedback 감지</dt><dd>{health.feedback_analysis_enabled ? "활성" : "비활성"}</dd>
         <dt>Peak 감시</dt><dd>{health.peak_analysis_enabled ? "활성" : "비활성"}</dd>
         <dt>Dynamic Range</dt><dd>{health.dynamic_range_analysis_enabled ? "활성" : "비활성"}</dd>
+        <dt>미터 스트림</dt><dd>{health.meter_stream_enabled ? "활성" : "비활성"}</dd>
       </dl>
     {:else}
       <p>로딩 중…</p>
     {/if}
+  </section>
+
+  <section class="card">
+    <h2>
+      라이브 미터 ({meterChannels.length})
+      <span class="stream-status" class:connected={metersConnected}>
+        {metersConnected ? "수신 중" : "대기"}
+      </span>
+    </h2>
+    <Meters channels={meterChannels} />
   </section>
 
   <section class="card kill-switch">
