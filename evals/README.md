@@ -154,6 +154,7 @@ cases:
 | `peak-baseline.yaml` | `peak`+`true_peak` | 10/10 (4 cases × 다중 어설션) |
 | `feedback-baseline.yaml` | `detect_peak_bins` | 7/7 (5 cases × 다중 어설션) |
 | `dynamic-range-baseline.yaml` | `dynamic_range_db` | 5/5 |
+| `lra-baseline.yaml` | `lra` | 5/5 (raises 케이스 2개 포함) |
 
 ## DSP 정확도 임계 기준
 
@@ -163,6 +164,8 @@ cases:
 - True Peak: 사인파 0~10% 초과(resample 보간 transient 영향).
 - Feedback frequency: ± 50 Hz (1024-pt FFT의 bin resolution ≈ 47 Hz).
 - Dynamic Range: abs_tol 0.01 dB (사인파/임펄스 이론값과 거의 정확).
+- LRA: 속성·범위 검증 (steady < 0.5 LU). 정확값 검증은 EBU Tech 3341
+  conformance test signals 도입 시점에 추가 (ADR-0009).
 
 임계를 *완화*하려면 ADR 작성 필요.
 

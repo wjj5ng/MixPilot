@@ -8,7 +8,7 @@ FFT, LUFS, Peak, RMS, Dynamic Range, Feedback Detection 등의 DSP 분석을 기
 
 ## Domain
 
-- **분석 지표 (DSP)**: FFT(주파수 분포), LUFS(라우드니스), Peak, RMS, Dynamic Range, Feedback Detection.
+- **분석 지표 (DSP)**: FFT(주파수 분포), LUFS(라우드니스), LRA(라우드니스 레인지, ADR-0009), Peak, RMS, Dynamic Range, Feedback Detection.
 - **입력 소스**: 메인 보컬, 설교자, 성가대, 라이브 악기 등 다중 채널.
 - **출력**: 규칙 기반 믹싱 추천 + 자동화 액션.
 - **타깃 환경**: 라이브 예배, 공연. 안정성·일관성이 새로운 기능보다 우선.

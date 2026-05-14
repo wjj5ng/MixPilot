@@ -1,0 +1,65 @@
+# LRA (EBU R128 Loudness Range) 회귀 케이스.
+#
+# 길이 >= 3초 신호 위에서 short-term LUFS 분포의 P95 - P10. 단위 LU.
+#
+# 정확한 LRA 값은 K-weighting · 게이팅 · percentile 보간에 의존하므로 *속성*과
+# *범위*로 검증. 결정성: 같은 입력 → 같은 출력은 단위 테스트가 보장.
+
+id: lra-baseline
+description: LRA의 결정적 회귀 — steady·too short·다른 sample rate.
+function_under_test: mixpilot.dsp.lra.lra
+
+cases:
+  - id: lra-steady-sine-low
+    input:
+      kind: sine
+      sample_rate: 48000
+      frequency_hz: 1000
+      amplitude: 0.5
+      duration_seconds: 10.0
+    expected:
+      # Steady 사인파는 모든 블록이 동일한 short-term LUFS → 좁은 분포.
+      value_range: [0.0, 0.5]
+
+  - id: lra-steady-sine-amplitude-invariant
+    input:
+      kind: sine
+      sample_rate: 48000
+      frequency_hz: 440
+      amplitude: 0.1
+      duration_seconds: 10.0
+    expected:
+      # amp만 다른 steady — 위 케이스와 거의 동일한 LRA여야 함.
+      value_range: [0.0, 0.5]
+
+  - id: lra-silence
+    input:
+      kind: silence
+      sample_rate: 48000
+      duration_seconds: 10.0
+    expected:
+      # 절대 게이트로 전부 제거 → NO_LRA(0.0).
+      value: 0.0
+      tolerance_abs: 0.0
+
+  - id: lra-too-short
+    input:
+      kind: sine
+      sample_rate: 48000
+      frequency_hz: 1000
+      amplitude: 0.5
+      duration_seconds: 2.5
+    expected:
+      raises: ValueError
+      match: "too short"
+
+  - id: lra-unsupported-rate
+    input:
+      kind: sine
+      sample_rate: 44100
+      frequency_hz: 1000
+      amplitude: 0.5
+      duration_seconds: 5.0
+    expected:
+      raises: ValueError
+      match: "48000"

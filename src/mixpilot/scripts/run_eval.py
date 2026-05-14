@@ -38,6 +38,7 @@ import yaml
 
 from mixpilot.dsp.dynamic_range import dynamic_range_db
 from mixpilot.dsp.feedback import FeedbackPeak, detect_peak_bins
+from mixpilot.dsp.lra import lra
 from mixpilot.dsp.lufs import lufs_integrated
 from mixpilot.dsp.peak import peak, true_peak
 from mixpilot.dsp.rms import rms
@@ -130,6 +131,9 @@ _DSP_DISPATCH: dict[str, Callable[[np.ndarray, Mapping[str, Any]], float]] = {
     "mixpilot.dsp.peak.true_peak": lambda samples, _input: true_peak(samples),
     "mixpilot.dsp.dynamic_range.dynamic_range_db": lambda samples, _input: (
         dynamic_range_db(samples)
+    ),
+    "mixpilot.dsp.lra.lra": lambda samples, input_spec: lra(
+        samples, int(input_spec["sample_rate"])
     ),
 }
 
