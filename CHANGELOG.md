@@ -7,6 +7,14 @@ MixPilot의 모든 주목할 만한 변경 사항을 기록합니다.
 
 ## [Unreleased]
 
+### Removed (Unreleased, 가이드 #1)
+
+- **채널 매핑 카드의 "새로고침" 버튼 제거** — PUT /channels 인-라인 편집이
+  yaml 영속 + 처리 루프 다음 frame 반영을 모두 만족하므로 별도 새로고침
+  불필요. 카드 헤더 hint를 "인-라인 편집 즉시 반영"으로 갱신. yaml 외부
+  편집은 브라우저 reload로 GET /channels(`cm.reload()` 호출)가 새 값 반환.
+  사용하지 않는 `.reload-btn` CSS도 함께 제거.
+
 ### Added (Unreleased, 가이드 #6)
 
 - **graceful 임계 reload** — `POST /control/reload` + 상태 카드 "🔄 임계 reload"

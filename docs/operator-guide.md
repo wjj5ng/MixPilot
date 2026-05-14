@@ -142,8 +142,9 @@ npm --prefix frontend run dev
 - 미터 publish 간격 늘리기: `MIXPILOT_METER_STREAM__PUBLISH_INTERVAL_FRAMES=10`
 
 ### 채널맵 변경이 안 보임
-- "새로고침" 버튼 누름 — yaml 외부 편집했을 때 필요
-- UI 인-라인 편집은 즉시 반영 (재시작 불필요)
+- UI 인-라인 편집은 즉시 반영(저장 시 다음 frame부터 새 매핑)
+- yaml을 외부 편집했다면 화면을 새로고침(브라우저 reload) — GET /channels가
+  `reload()` 후 응답하므로 다음 요청에서 새 값 반영
 
 ---
 
