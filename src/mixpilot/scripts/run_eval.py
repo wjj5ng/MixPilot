@@ -34,6 +34,7 @@ import numpy as np
 import yaml
 
 from mixpilot.dsp.lufs import lufs_integrated
+from mixpilot.dsp.peak import peak, true_peak
 from mixpilot.dsp.rms import rms
 
 
@@ -65,9 +66,12 @@ def _generate_dc(params: Mapping[str, Any]) -> np.ndarray:
 
 
 def _generate_silence(params: Mapping[str, Any]) -> np.ndarray:
-    sr = int(params["sample_rate"])
-    duration = float(params["duration_seconds"])
-    return np.zeros(int(sr * duration), dtype=np.float64)
+    if "num_samples" in params:
+        n = int(params["num_samples"])
+    else:
+        sr = int(params["sample_rate"])
+        n = int(sr * float(params["duration_seconds"]))
+    return np.zeros(n, dtype=np.float64)
 
 
 def _generate_impulse(params: Mapping[str, Any]) -> np.ndarray:
@@ -92,6 +96,18 @@ _DSP_DISPATCH: dict[str, Callable[[np.ndarray, Mapping[str, Any]], float]] = {
     "mixpilot.dsp.lufs.lufs_integrated": lambda samples, input_spec: lufs_integrated(
         samples, int(input_spec["sample_rate"])
     ),
+    "mixpilot.dsp.peak.peak": lambda samples, _input: peak(samples),
+    "mixpilot.dsp.peak.true_peak": lambda samples, _input: true_peak(samples),
+}
+
+
+# Peak YAML의 expected 키 → (DSP 함수 path, 비교 종류) 매핑.
+# `equal`은 tolerance_abs/tolerance_rel과 함께 사용. `at_least`/`at_most`는 단방향.
+_PEAK_ASSERTIONS: dict[str, tuple[str, str]] = {
+    "peak": ("mixpilot.dsp.peak.peak", "equal"),
+    "true_peak": ("mixpilot.dsp.peak.true_peak", "equal"),
+    "true_peak_at_least": ("mixpilot.dsp.peak.true_peak", "at_least"),
+    "true_peak_at_most": ("mixpilot.dsp.peak.true_peak", "at_most"),
 }
 
 
@@ -253,13 +269,135 @@ def run_case(
     )
 
 
+def _run_multi_function_case(
+    case: Mapping[str, Any],
+    cached_measurements: dict[str, dict[str, float]],
+) -> list[CaseResult]:
+    """`functions_under_test`(복수) YAML의 한 케이스를 평가.
+
+    `expected`에 있는 어설션 키들(peak/true_peak/true_peak_at_least/...)을
+    순회하며 각각의 CaseResult를 생성. 동일 함수의 측정값은 케이스 내에서
+    캐싱(`cached_measurements[case_id][fn_path]`)해 중복 호출 회피.
+    """
+    case_id = str(case.get("id", "<unnamed>"))
+    input_spec = case.get("input", {})
+    expected_spec = case.get("expected", {})
+
+    kind = input_spec.get("kind")
+    if kind not in _SIGNAL_GENERATORS:
+        return [
+            CaseResult(
+                case_id=case_id,
+                function_under_test="<multi>",
+                passed=False,
+                measured=None,
+                expected_summary="<n/a>",
+                reason=f"unsupported signal kind: {kind!r}",
+            )
+        ]
+
+    samples = _SIGNAL_GENERATORS[kind](input_spec)
+    abs_tol = expected_spec.get("tolerance_abs")
+    rel_tol = expected_spec.get("tolerance_rel")
+    cached = cached_measurements.setdefault(case_id, {})
+
+    results: list[CaseResult] = []
+    for key, (fn_path, op) in _PEAK_ASSERTIONS.items():
+        if key not in expected_spec:
+            continue
+        target = float(expected_spec[key])
+        if fn_path not in _DSP_DISPATCH:
+            results.append(
+                CaseResult(
+                    case_id=f"{case_id}::{key}",
+                    function_under_test=fn_path,
+                    passed=False,
+                    measured=None,
+                    expected_summary=f"{key}={target:.6g}",
+                    reason=f"unsupported function: {fn_path!r}",
+                )
+            )
+            continue
+        if fn_path not in cached:
+            cached[fn_path] = float(_DSP_DISPATCH[fn_path](samples, input_spec))
+        measured = cached[fn_path]
+
+        passed: bool
+        summary: str
+        reason = ""
+        if op == "equal":
+            passed = _within_tolerance(
+                measured,
+                target,
+                abs_tol=float(abs_tol) if abs_tol is not None else None,
+                rel_tol=float(rel_tol) if rel_tol is not None else None,
+            )
+            tol_str = ""
+            if abs_tol is not None:
+                tol_str = f" abs_tol={float(abs_tol):.2g}"
+            elif rel_tol is not None:
+                tol_str = f" rel_tol={float(rel_tol):.2g}"
+            summary = f"{key}={target:.6g}{tol_str}"
+            if not passed:
+                reason = "value out of tolerance"
+        elif op == "at_least":
+            passed = measured >= target
+            summary = f"{key}={target:.6g}"
+            if not passed:
+                reason = "measured below threshold"
+        elif op == "at_most":
+            passed = measured <= target
+            summary = f"{key}={target:.6g}"
+            if not passed:
+                reason = "measured above threshold"
+        else:  # pragma: no cover — defensive.
+            passed = False
+            summary = f"<unknown op: {op}>"
+            reason = "internal: unknown assertion op"
+
+        results.append(
+            CaseResult(
+                case_id=f"{case_id}::{key}",
+                function_under_test=fn_path,
+                passed=passed,
+                measured=measured,
+                expected_summary=summary,
+                reason=reason,
+            )
+        )
+
+    if not results:
+        return [
+            CaseResult(
+                case_id=case_id,
+                function_under_test="<multi>",
+                passed=False,
+                measured=None,
+                expected_summary="<n/a>",
+                reason="expected has no recognized assertion keys",
+            )
+        ]
+    return results
+
+
 def run_yaml_file(path: Path) -> list[CaseResult]:
     """단일 eval YAML을 실행해 케이스 결과 리스트 반환."""
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    function_under_test = str(data.get("function_under_test", ""))
     cases = data.get("cases", []) or []
+
+    # 멀티 함수 YAML(`functions_under_test`) 우선 처리.
+    if "functions_under_test" in data:
+        cached_measurements: dict[str, dict[str, float]] = {}
+        results: list[CaseResult] = []
+        for c in cases:
+            if not isinstance(c, dict):
+                continue
+            results.extend(_run_multi_function_case(c, cached_measurements))
+        return results
+
+    function_under_test = str(data.get("function_under_test", ""))
     prior_measured: dict[str, float | None] = {}
-    results: list[CaseResult] = []
+    results = []
     for c in cases:
         if not isinstance(c, dict):
             continue

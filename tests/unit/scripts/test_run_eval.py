@@ -318,6 +318,73 @@ class TestRunYamlFile:
         assert run_eval.run_yaml_file(path) == []
 
 
+class TestMultiFunctionCase:
+    def test_peak_case_with_both_functions(self) -> None:
+        # peak-sine-1khz-amp0.5처럼 peak/true_peak 둘 다 검증되는 케이스.
+        case = {
+            "id": "peak-sine",
+            "input": {
+                "kind": "sine",
+                "sample_rate": 48000,
+                "frequency_hz": 1000,
+                "amplitude": 0.5,
+                "duration_seconds": 0.1,
+            },
+            "expected": {
+                "peak": 0.5,
+                "tolerance_rel": 1.0e-3,
+                "true_peak_at_least": 0.5,
+                "true_peak_at_most": 0.55,
+            },
+        }
+        cached: dict[str, dict[str, float]] = {}
+        results = run_eval._run_multi_function_case(case, cached)
+        assert len(results) == 3
+        assert all(r.passed for r in results)
+        # true_peak가 한 번만 호출되었는지 — at_least/at_most 둘 다 같은 값을 봄.
+        true_peak_results = [r for r in results if "true_peak" in r.case_id]
+        assert len(true_peak_results) == 2
+        assert true_peak_results[0].measured == true_peak_results[1].measured
+
+    def test_silence_supports_num_samples(self) -> None:
+        case = {
+            "id": "peak-silence",
+            "input": {"kind": "silence", "sample_rate": 48000, "num_samples": 1024},
+            "expected": {"peak": 0.0, "true_peak": 0.0, "tolerance_abs": 1.0e-9},
+        }
+        results = run_eval._run_multi_function_case(case, {})
+        assert len(results) == 2
+        assert all(r.passed for r in results)
+
+    def test_at_least_threshold_violation(self) -> None:
+        case = {
+            "id": "should-fail-at-least",
+            "input": {
+                "kind": "sine",
+                "sample_rate": 48000,
+                "frequency_hz": 1000,
+                "amplitude": 0.1,
+                "duration_seconds": 0.1,
+            },
+            "expected": {"true_peak_at_least": 0.99},  # 0.1 amp는 절대 못 넘음
+        }
+        results = run_eval._run_multi_function_case(case, {})
+        assert len(results) == 1
+        assert not results[0].passed
+        assert "below threshold" in results[0].reason
+
+    def test_no_recognized_assertion_keys(self) -> None:
+        case = {
+            "id": "no-keys",
+            "input": {"kind": "silence", "sample_rate": 48000, "num_samples": 100},
+            "expected": {"some_unknown_field": 1.0},
+        }
+        results = run_eval._run_multi_function_case(case, {})
+        assert len(results) == 1
+        assert not results[0].passed
+        assert "no recognized assertion keys" in results[0].reason
+
+
 class TestMain:
     def test_main_passes_for_real_rms_baseline(self) -> None:
         path = (
@@ -335,6 +402,16 @@ class TestMain:
             / "evals"
             / "cases"
             / "lufs-baseline.yaml"
+        )
+        exit_code = run_eval.main([str(path)])
+        assert exit_code == 0
+
+    def test_main_passes_for_real_peak_baseline(self) -> None:
+        path = (
+            Path(__file__).resolve().parents[3]
+            / "evals"
+            / "cases"
+            / "peak-baseline.yaml"
         )
         exit_code = run_eval.main([str(path)])
         assert exit_code == 0
