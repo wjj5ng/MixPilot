@@ -89,6 +89,20 @@ class AuditLogResponse(BaseModel):
     entries: list[AuditEntry]
 
 
+class ChannelMapEntry(BaseModel):
+    """채널맵 한 항목 — `config/channels.yaml`의 한 채널 entry."""
+
+    channel: int
+    category: str
+    label: str
+
+
+class ChannelMapResponse(BaseModel):
+    """`GET /channels` 응답 — 현재 채널맵 전체."""
+
+    entries: list[ChannelMapEntry]
+
+
 class ChannelMeter(BaseModel):
     """단일 채널 미터 — 라벨·카테고리·RMS·peak·LRA·옥타브 스펙트럼."""
 

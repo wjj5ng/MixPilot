@@ -3,6 +3,7 @@
   import Meters from "./Meters.svelte";
   import {
     fetchAuditLog,
+    fetchChannelMap,
     fetchHealth,
     fetchRecentActions,
     forceDryRun,
@@ -10,6 +11,7 @@
     subscribeRecommendations,
     type ActionEntry,
     type AuditEntry,
+    type ChannelMapEntry,
     type ChannelMeter,
     type HealthResponse,
     type RecommendationPayload,
@@ -26,6 +28,8 @@
   let metersConnected = $state(false);
   let auditEntries = $state<AuditEntry[]>([]);
   let auditEnabled = $state<boolean | null>(null);
+  let channelMap = $state<ChannelMapEntry[]>([]);
+  let channelMapError = $state<string | null>(null);
 
   const MAX_VISIBLE_RECS = 50;
   const RECENT_ACTIONS_POLL_MS = 5_000;
@@ -56,6 +60,28 @@
     }
   }
 
+  async function refreshChannelMap(): Promise<void> {
+    try {
+      const data = await fetchChannelMap();
+      channelMap = data.entries;
+      channelMapError = null;
+    } catch (e) {
+      channelMapError = String(e);
+    }
+  }
+
+  function categoryLabel(cat: string): string {
+    return (
+      {
+        vocal: "보컬",
+        preacher: "설교자",
+        choir: "성가대",
+        instrument: "악기",
+        unknown: "미정",
+      }[cat] ?? cat
+    );
+  }
+
   async function handleKillSwitch(): Promise<void> {
     if (killSwitchBusy) return;
     killSwitchBusy = true;
@@ -82,6 +108,8 @@
 
     await refreshAuditLog();
     auditLogTimer = setInterval(refreshAuditLog, AUDIT_LOG_POLL_MS);
+
+    await refreshChannelMap();
 
     unsubscribe = subscribeRecommendations(
       (rec) => {
@@ -235,6 +263,43 @@
       </dl>
     {:else}
       <p>로딩 중…</p>
+    {/if}
+  </section>
+
+  <section class="card">
+    <h2>
+      채널 매핑 ({channelMap.length})
+      <button
+        class="reload-btn"
+        onclick={refreshChannelMap}
+        title="config/channels.yaml 다시 읽기"
+      >새로고침</button>
+    </h2>
+    {#if channelMapError}
+      <p class="error">로드 실패: {channelMapError}</p>
+    {:else if channelMap.length === 0}
+      <p class="hint">채널맵이 비어 있습니다 — <code>config/channels.yaml</code> 확인.</p>
+    {:else}
+      <table class="channel-map">
+        <thead>
+          <tr>
+            <th>ch</th>
+            <th>카테고리</th>
+            <th>라벨</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each channelMap as entry (entry.channel)}
+            <tr>
+              <td class="ch-num">ch{String(entry.channel).padStart(2, "0")}</td>
+              <td class="ch-category">
+                <span class="cat-pill cat-{entry.category}">{categoryLabel(entry.category)}</span>
+              </td>
+              <td class="ch-label">{entry.label || "—"}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
     {/if}
   </section>
 
@@ -486,6 +551,82 @@
   .stream-status.connected {
     background: #1e3a2e;
     color: #6fcf97;
+  }
+
+  /* 채널 매핑 카드 */
+  .channel-map {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+  .channel-map th {
+    text-align: left;
+    color: #8b95a3;
+    font-weight: 500;
+    padding: 0.35rem 0.5rem;
+    border-bottom: 1px solid #2a2f39;
+  }
+  .channel-map td {
+    padding: 0.3rem 0.5rem;
+    border-bottom: 1px solid #1a1d24;
+    vertical-align: middle;
+  }
+  .channel-map tbody tr:hover {
+    background: #1f232b;
+  }
+  .ch-num {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #8b95a3;
+    width: 4rem;
+  }
+  .ch-category {
+    width: 6rem;
+  }
+  .ch-label {
+    color: #e6e8eb;
+  }
+  .cat-pill {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    background: #2a2f39;
+    color: #c8cdd6;
+  }
+  .cat-vocal {
+    background: #1e3a5f;
+    color: #aac4ff;
+  }
+  .cat-preacher {
+    background: #3d2e1a;
+    color: #ffce80;
+  }
+  .cat-choir {
+    background: #1e3a2e;
+    color: #6fcf97;
+  }
+  .cat-instrument {
+    background: #3a1e3a;
+    color: #d99ad9;
+  }
+  .cat-unknown {
+    background: #2a2f39;
+    color: #8b95a3;
+  }
+  .reload-btn {
+    background: transparent;
+    color: #8b95a3;
+    border: 1px solid #2a2f39;
+    padding: 0.2rem 0.55rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+    margin-left: auto;
+    font-weight: 400;
+  }
+  .reload-btn:hover {
+    background: #2a2f39;
+    color: #c8cdd6;
   }
 
   /* 감사 로그 카드 */

@@ -19,6 +19,8 @@ export type MeterSnapshot = components["schemas"]["MeterSnapshotEvent"];
 export type ChannelMeter = components["schemas"]["ChannelMeter"];
 export type AuditEntry = components["schemas"]["AuditEntry"];
 export type AuditLogResponse = components["schemas"]["AuditLogResponse"];
+export type ChannelMapEntry = components["schemas"]["ChannelMapEntry"];
+export type ChannelMapResponse = components["schemas"]["ChannelMapResponse"];
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -48,6 +50,15 @@ export async function fetchRecentActions(): Promise<RecentActionsResponse> {
     throw new Error(`/control/recent-actions failed: ${response.status}`);
   }
   return (await response.json()) as RecentActionsResponse;
+}
+
+/** 현재 채널맵 — config/channels.yaml의 현재 내용. */
+export async function fetchChannelMap(): Promise<ChannelMapResponse> {
+  const response = await fetch(`${API_BASE_URL}/channels`);
+  if (!response.ok) {
+    throw new Error(`/channels failed: ${response.status}`);
+  }
+  return (await response.json()) as ChannelMapResponse;
 }
 
 /** 감사 로그 JSONL의 최근 레코드 — ADR-0008 §3 영구 이력. */

@@ -31,6 +31,8 @@ from mixpilot.api.schemas import (
     ActionEntry,
     AuditEntry,
     AuditLogResponse,
+    ChannelMapEntry,
+    ChannelMapResponse,
     ControlResponse,
     HealthResponse,
     MeterSnapshotEvent,
@@ -456,6 +458,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     meter_broker = MeterBroker()
     # audit_log_path가 None이면 record()/read_recent()가 모두 no-op.
     audit_logger = AuditLogger(path=cfg.audit_log_path)
+    # channel_map은 audio 비활성 상태에서도 endpoint가 읽을 수 있어야 하므로
+    # 라이프스팬 외부에서 1회 생성.
+    channel_map = YamlChannelMetadata(cfg.channel_map_path)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -484,7 +489,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     action_history=action_history,
                 )
                 app.state.controller = controller
-                channel_map = YamlChannelMetadata(cfg.channel_map_path)
                 sources = list(await channel_map.get_all_channels())
                 sources_by_id = {int(s.channel): s for s in sources}
                 rms_targets = _build_rms_dbfs_targets(cfg)
@@ -617,6 +621,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.controller = None  # lifespan에서 audio.enabled=True면 채워진다.
     app.state.action_history = action_history
     app.state.audit_logger = audit_logger
+    app.state.channel_map = channel_map
 
     if cfg.dev_cors_enabled:
         app.add_middleware(
@@ -668,6 +673,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return RecentActionsResponse(
             entries=entries, window_seconds=history.window_seconds
         )
+
+    @app.get("/channels", response_model=ChannelMapResponse)
+    async def get_channels(request: Request) -> ChannelMapResponse:
+        """현재 채널맵 — `config/channels.yaml`을 그대로 반영.
+
+        운영자가 매핑을 외부 편집 후 새로고침해 즉시 확인할 수 있도록 매 요청마다
+        파일을 다시 읽는다(`reload()` 후 read). 매우 자주 호출되는 경로가 아니라 OK.
+        """
+        cm: YamlChannelMetadata = request.app.state.channel_map
+        cm.reload()
+        sources = list(await cm.get_all_channels())
+        entries = [
+            ChannelMapEntry(
+                channel=int(s.channel),
+                category=s.category.value,
+                label=s.label,
+            )
+            for s in sources
+        ]
+        return ChannelMapResponse(entries=entries)
 
     @app.get("/control/audit-log/recent", response_model=AuditLogResponse)
     async def audit_log_recent(

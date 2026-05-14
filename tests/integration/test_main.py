@@ -163,6 +163,42 @@ class TestRecentActionsEndpoint:
         assert entry["reason"] == "테스트"
 
 
+class TestChannelMapEndpoint:
+    """GET /channels — 현재 채널맵 조회."""
+
+    def test_returns_entries_from_yaml(self, client: TestClient) -> None:
+        # 디폴트 settings는 config/channels.yaml을 가리킴 — 프로젝트 fixture 사용.
+        response = client.get("/channels")
+        assert response.status_code == 200
+        body = response.json()
+        assert "entries" in body
+        # 채널맵에 적어도 1개 엔트리가 있어야 함.
+        assert len(body["entries"]) > 0
+        # 각 항목 구조 검증.
+        first = body["entries"][0]
+        assert "channel" in first
+        assert "category" in first
+        assert "label" in first
+        assert isinstance(first["channel"], int)
+
+    def test_returns_known_categories(self, client: TestClient) -> None:
+        body = client.get("/channels").json()
+        valid_categories = {
+            "vocal", "preacher", "choir", "instrument", "unknown",
+        }
+        for entry in body["entries"]:
+            assert entry["category"] in valid_categories
+
+    def test_works_without_audio(self) -> None:
+        # audio.enabled=False(디폴트)에서도 채널맵 endpoint는 동작.
+        app = create_app(settings=Settings())
+        client = TestClient(app)
+        with client:
+            response = client.get("/channels")
+        assert response.status_code == 200
+        assert len(response.json()["entries"]) > 0
+
+
 class TestAuditLogEndpoint:
     """ADR-0008 §3 — GET /control/audit-log/recent."""
 

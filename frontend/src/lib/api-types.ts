@@ -47,6 +47,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Channels
+         * @description 현재 채널맵 — `config/channels.yaml`을 그대로 반영.
+         *
+         *     운영자가 매핑을 외부 편집 후 새로고침해 즉시 확인할 수 있도록 매 요청마다
+         *     파일을 다시 읽는다(`reload()` 후 read). 매우 자주 호출되는 경로가 아니라 OK.
+         */
+        get: operations["get_channels_channels_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/control/audit-log/recent": {
         parameters: {
             query?: never;
@@ -205,6 +228,26 @@ export interface components {
             enabled: boolean;
             /** Entries */
             entries: components["schemas"]["AuditEntry"][];
+        };
+        /**
+         * ChannelMapEntry
+         * @description 채널맵 한 항목 — `config/channels.yaml`의 한 채널 entry.
+         */
+        ChannelMapEntry: {
+            /** Channel */
+            channel: number;
+            /** Category */
+            category: string;
+            /** Label */
+            label: string;
+        };
+        /**
+         * ChannelMapResponse
+         * @description `GET /channels` 응답 — 현재 채널맵 전체.
+         */
+        ChannelMapResponse: {
+            /** Entries */
+            entries: components["schemas"]["ChannelMapEntry"][];
         };
         /**
          * ChannelMeter
@@ -388,6 +431,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecentActionsResponse"];
+                };
+            };
+        };
+    };
+    get_channels_channels_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelMapResponse"];
                 };
             };
         };
