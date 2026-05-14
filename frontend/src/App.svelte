@@ -575,11 +575,7 @@
   <section class="card">
     <h2>
       채널 매핑 ({channelMap.length})
-      <button
-        class="reload-btn"
-        onclick={refreshChannelMap}
-        title="config/channels.yaml 다시 읽기"
-      >새로고침</button>
+      <span class="hint-inline">— 인-라인 편집 즉시 반영(재시작·새로고침 불필요)</span>
     </h2>
     {#if channelMapError}
       <p class="error">로드 실패: {channelMapError}</p>
@@ -1204,21 +1200,6 @@
   }
   .pair-mono {
     color: #5a6270;
-  }
-  .reload-btn {
-    background: transparent;
-    color: #8b95a3;
-    border: 1px solid #2a2f39;
-    padding: 0.2rem 0.55rem;
-    border-radius: 0.25rem;
-    font-size: 0.75rem;
-    cursor: pointer;
-    margin-left: auto;
-    font-weight: 400;
-  }
-  .reload-btn:hover {
-    background: #2a2f39;
-    color: #c8cdd6;
   }
   .reload-row {
     display: flex;
