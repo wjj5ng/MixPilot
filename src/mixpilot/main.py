@@ -44,6 +44,7 @@ from mixpilot.api.schemas import (
     OscMessage,
     RecentActionsResponse,
     RecommendationEvent,
+    ReloadResponse,
     RulesResponse,
     RuleState,
     RuleToggleRequest,
@@ -86,6 +87,7 @@ from mixpilot.rules import (
 from mixpilot.runtime import (
     ActionHistory,
     FeedbackDetector,
+    LiveThresholds,
     PersistenceFilter,
     RollingBuffer,
     RuleToggles,
@@ -301,33 +303,55 @@ def _build_lufs_targets(settings: Settings) -> dict[str, float]:
     }
 
 
+def _build_live_thresholds(settings: Settings) -> LiveThresholds:
+    """settings에서 라이브 갱신 가능한 임계·타깃을 LiveThresholds로 복사.
+
+    `/control/reload` 호출 시 동일 함수의 *값만* 새 settings로 재적용해
+    in-place mutate — 처리 루프는 동일 객체 참조를 유지한다.
+    """
+    lt = LiveThresholds()
+    _apply_settings_to_live_thresholds(lt, settings)
+    return lt
+
+
+def _apply_settings_to_live_thresholds(lt: LiveThresholds, settings: Settings) -> None:
+    """settings 값을 LiveThresholds에 적용. reload에서도 동일 경로 재사용."""
+    lt.apply_threshold_settings(
+        rms_targets=_build_rms_dbfs_targets(settings),
+        lufs_targets=_build_lufs_targets(settings),
+        peak_headroom_threshold_dbfs=settings.peak_analysis.headroom_threshold_dbfs,
+        peak_oversample=settings.peak_analysis.oversample,
+        peak_persistence_frames=settings.peak_analysis.persistence_frames,
+        dynamic_range_low_threshold_db=settings.dynamic_range_analysis.low_threshold_db,
+        dynamic_range_high_threshold_db=settings.dynamic_range_analysis.high_threshold_db,
+        dynamic_range_silence_threshold_db=(
+            settings.dynamic_range_analysis.silence_threshold_db
+        ),
+        dynamic_range_persistence_frames=(
+            settings.dynamic_range_analysis.persistence_frames
+        ),
+        lra_low_threshold_lu=settings.lra_analysis.low_threshold_lu,
+        lra_high_threshold_lu=settings.lra_analysis.high_threshold_lu,
+        lra_silence_threshold_lu=settings.lra_analysis.silence_threshold_lu,
+        phase_warn_threshold=settings.phase_analysis.warn_threshold,
+        feedback_pnr_threshold_db=settings.feedback_analysis.pnr_threshold_db,
+    )
+
+
 async def _processing_loop(
     audio: SoundDeviceAudioSource | SyntheticAudioSource | WavReplayAudioSource,
     controller: M32OscController,
     broker: RecommendationBroker,
     channel_map: YamlChannelMetadata,
-    rms_targets: dict[str, float],
     rule_toggles: RuleToggles,
+    live_thresholds: LiveThresholds,
     *,
     lufs_buffer: RollingBuffer,
-    lufs_targets: dict[str, float],
     lufs_eval_interval_frames: int = 50,
     feedback_detectors: dict[int, FeedbackDetector],
-    feedback_pnr_threshold_db: float = 15.0,
-    peak_headroom_threshold_dbfs: float = -1.0,
-    peak_oversample: int = 4,
-    dynamic_range_low_threshold_db: float = 6.0,
-    dynamic_range_high_threshold_db: float = 20.0,
-    dynamic_range_silence_threshold_db: float = 0.5,
-    peak_persistence_frames: int = 1,
-    dynamic_range_persistence_frames: int = 1,
     persistence_filter: PersistenceFilter | None = None,
     lra_buffer: RollingBuffer,
     lra_eval_interval_frames: int = 300,
-    lra_low_threshold_lu: float = 5.0,
-    lra_high_threshold_lu: float = 15.0,
-    lra_silence_threshold_lu: float = 0.1,
-    phase_warn_threshold: float = -0.3,
     meter_broker: MeterBroker | None = None,
     meter_publish_interval_frames: int = 5,
     metrics_sink: JsonlMetricsSink | None = None,
@@ -346,6 +370,7 @@ async def _processing_loop(
     pfilter = (
         persistence_filter if persistence_filter is not None else PersistenceFilter()
     )
+    lt = live_thresholds
     # 채널 → 최신 LRA 값 캐시. publish cadence(~9 Hz) > LRA eval cadence(~0.3 Hz)이므로
     # 매 publish에 최신 LRA를 포함하려면 이전 평가값을 보관해야 한다.
     latest_lra: dict[int, float] = {}
@@ -357,7 +382,9 @@ async def _processing_loop(
             tg = rule_toggles.snapshot()
             channels = _split_signal_to_channels(signal, channel_map)
             recommendations = (
-                evaluate_all_channels(channels, rms_targets) if tg["loudness"] else []
+                evaluate_all_channels(channels, lt.rms_targets)
+                if tg["loudness"]
+                else []
             )
 
             # LUFS buffer는 항상 누적 — 토글 OFF여도 신호는 쌓아둠 → 다음 ON 시
@@ -375,7 +402,7 @@ async def _processing_loop(
                 )
                 lufs_channels = _split_signal_to_channels(buffered_signal, channel_map)
                 recommendations.extend(
-                    evaluate_all_channels_lufs(lufs_channels, lufs_targets)
+                    evaluate_all_channels_lufs(lufs_channels, lt.lufs_targets)
                 )
 
             # Feedback detector도 항상 update — persistence 추적은 *지속적으로*
@@ -393,7 +420,7 @@ async def _processing_loop(
                 recommendations.extend(
                     evaluate_all_feedback(
                         peaks_by_source,
-                        pnr_threshold_db=feedback_pnr_threshold_db,
+                        pnr_threshold_db=lt.feedback_pnr_threshold_db,
                     )
                 )
 
@@ -402,37 +429,39 @@ async def _processing_loop(
             if tg["peak"]:
                 peak_recs = evaluate_all_channels_peak(
                     channels,
-                    headroom_threshold_dbfs=peak_headroom_threshold_dbfs,
-                    oversample=peak_oversample,
+                    headroom_threshold_dbfs=lt.peak_headroom_threshold_dbfs,
+                    oversample=lt.peak_oversample,
                 )
                 peak_allowed = pfilter.observe(
                     "peak",
                     [int(r.target.channel) for r in peak_recs],
-                    peak_persistence_frames,
+                    lt.peak_persistence_frames,
                 )
                 recommendations.extend(
                     r for r in peak_recs if int(r.target.channel) in peak_allowed
                 )
             else:
-                pfilter.observe("peak", [], peak_persistence_frames)
+                pfilter.observe("peak", [], lt.peak_persistence_frames)
 
             if tg["dynamic_range"]:
                 dr_recs = evaluate_all_channels_dynamic_range(
                     channels,
-                    low_threshold_db=dynamic_range_low_threshold_db,
-                    high_threshold_db=dynamic_range_high_threshold_db,
-                    silence_threshold_db=dynamic_range_silence_threshold_db,
+                    low_threshold_db=lt.dynamic_range_low_threshold_db,
+                    high_threshold_db=lt.dynamic_range_high_threshold_db,
+                    silence_threshold_db=lt.dynamic_range_silence_threshold_db,
                 )
                 dr_allowed = pfilter.observe(
                     "dynamic_range",
                     [int(r.target.channel) for r in dr_recs],
-                    dynamic_range_persistence_frames,
+                    lt.dynamic_range_persistence_frames,
                 )
                 recommendations.extend(
                     r for r in dr_recs if int(r.target.channel) in dr_allowed
                 )
             else:
-                pfilter.observe("dynamic_range", [], dynamic_range_persistence_frames)
+                pfilter.observe(
+                    "dynamic_range", [], lt.dynamic_range_persistence_frames
+                )
 
             # Stereo phase는 항상 계산 — meter 캐시 갱신용. 룰 발화만 토글.
             phase_by_pair: dict[tuple[int, int], float] = {}
@@ -462,7 +491,7 @@ async def _processing_loop(
             if tg["phase"]:
                 recommendations.extend(
                     evaluate_all_phase_pairs(
-                        channels, warn_threshold=phase_warn_threshold
+                        channels, warn_threshold=lt.phase_warn_threshold
                     )
                 )
 
@@ -492,9 +521,9 @@ async def _processing_loop(
                     rec = evaluate_lra_value(
                         lra_ch.source,
                         value,
-                        low_threshold_lu=lra_low_threshold_lu,
-                        high_threshold_lu=lra_high_threshold_lu,
-                        silence_threshold_lu=lra_silence_threshold_lu,
+                        low_threshold_lu=lt.lra_low_threshold_lu,
+                        high_threshold_lu=lt.lra_high_threshold_lu,
+                        silence_threshold_lu=lt.lra_silence_threshold_lu,
                     )
                     if rec is not None:
                         recommendations.append(rec)
@@ -581,6 +610,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lra=cfg.lra_analysis.enabled,
         phase=cfg.phase_analysis.enabled,
     )
+    # 라이브 임계·타깃 — POST /control/reload가 in-place mutate. 처리 루프는
+    # 동일 객체 참조를 유지하므로 mutate가 다음 frame부터 즉시 반영.
+    live_thresholds = _build_live_thresholds(cfg)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -609,7 +641,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 # channel_map은 외부에서 1회 생성되어 app.state에 있음. 처리 루프는
                 # 매 frame `get_source_sync()`로 직접 조회 — PUT /channels로 갱신된
                 # 매핑을 다음 frame부터 즉시 반영.
-                rms_targets = _build_rms_dbfs_targets(cfg)
 
                 # 버퍼·detector는 *항상* 생성 — 토글 OFF여도 누적은 진행되어
                 # 다시 ON 시 즉시 의미 있는 평가가 가능. config에 값이 없으면
@@ -622,7 +653,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     num_channels=cfg.audio.num_channels,
                     dtype=np.float32,
                 )
-                lufs_targets = _build_lufs_targets(cfg)
 
                 lra_capacity = int(
                     cfg.audio.sample_rate * cfg.lra_analysis.buffer_seconds
@@ -654,40 +684,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         controller,
                         broker,
                         channel_map,
-                        rms_targets,
                         rule_toggles,
+                        live_thresholds,
                         lufs_buffer=lufs_buffer,
-                        lufs_targets=lufs_targets,
                         lufs_eval_interval_frames=cfg.lufs_analysis.eval_interval_frames,
                         feedback_detectors=feedback_detectors,
-                        feedback_pnr_threshold_db=cfg.feedback_analysis.pnr_threshold_db,
-                        peak_headroom_threshold_dbfs=(
-                            cfg.peak_analysis.headroom_threshold_dbfs
-                        ),
-                        peak_oversample=cfg.peak_analysis.oversample,
-                        dynamic_range_low_threshold_db=(
-                            cfg.dynamic_range_analysis.low_threshold_db
-                        ),
-                        dynamic_range_high_threshold_db=(
-                            cfg.dynamic_range_analysis.high_threshold_db
-                        ),
-                        dynamic_range_silence_threshold_db=(
-                            cfg.dynamic_range_analysis.silence_threshold_db
-                        ),
-                        peak_persistence_frames=(cfg.peak_analysis.persistence_frames),
-                        dynamic_range_persistence_frames=(
-                            cfg.dynamic_range_analysis.persistence_frames
-                        ),
                         lra_buffer=lra_buffer,
                         lra_eval_interval_frames=(
                             cfg.lra_analysis.eval_interval_frames
                         ),
-                        lra_low_threshold_lu=cfg.lra_analysis.low_threshold_lu,
-                        lra_high_threshold_lu=cfg.lra_analysis.high_threshold_lu,
-                        lra_silence_threshold_lu=(
-                            cfg.lra_analysis.silence_threshold_lu
-                        ),
-                        phase_warn_threshold=cfg.phase_analysis.warn_threshold,
                         meter_broker=(
                             meter_broker if cfg.meter_stream.enabled else None
                         ),
@@ -746,6 +751,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.audit_logger = audit_logger
     app.state.channel_map = channel_map
     app.state.rule_toggles = rule_toggles_default
+    app.state.live_thresholds = live_thresholds
 
     if cfg.dev_cors_enabled:
         app.add_middleware(
@@ -1015,6 +1021,62 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             mode=controller.effective_mode.value,
             kill_switch_engaged=controller.kill_switch_engaged,
         )
+
+    @app.post("/control/reload", response_model=ReloadResponse)
+    async def reload_thresholds(request: Request) -> ReloadResponse:
+        """graceful 임계·타깃 reload — service 중 환경 변수 갱신 후 호출.
+
+        새 `Settings()`를 생성해 `.env`와 현재 환경 변수를 재평가하고,
+        라이브 갱신 가능한 임계·타깃만 in-place mutate. 처리 루프는 다음
+        frame부터 새 값으로 평가 — 재시작 불필요.
+
+        라이브 변경 불가 영역(audio·LUFS/LRA buffer 크기·detector persistence·
+        OSC host 등)은 `ignored`로 보고. 그쪽을 바꾸려면 명시적 재시작 필요.
+
+        주의: `feedback_pnr_threshold_db`는 평가 시 확인 임계로는 즉시
+        반영되나, 채널별 `FeedbackDetector`가 갖는 검출 임계는 객체 재생성
+        없이 갱신되지 않는다(detector는 ignored에 포함).
+        """
+        lt: LiveThresholds = request.app.state.live_thresholds
+        # 새 Settings — pydantic-settings가 .env + 환경 변수 재평가.
+        new_settings = Settings()
+        _apply_settings_to_live_thresholds(lt, new_settings)
+        ignored = [
+            {
+                "field": "audio.*",
+                "reason": "오디오 소스·sample rate·채널 수는 재시작 필요",
+            },
+            {
+                "field": "lufs_analysis.buffer_seconds / lra_analysis.buffer_seconds",
+                "reason": "RollingBuffer capacity는 재할당 필요 — 재시작",
+            },
+            {
+                "field": (
+                    "feedback_analysis.persistence_frames / "
+                    "min_frequency_hz / max_frequency_hz"
+                ),
+                "reason": "채널별 FeedbackDetector 재생성 필요 — 재시작",
+            },
+            {
+                "field": "m32.host / m32.port",
+                "reason": "OSC 연결 재생성 필요 — 재시작",
+            },
+            {
+                "field": "meter_stream.publish_interval_frames",
+                "reason": "처리 루프 kwarg — 재시작 시 반영",
+            },
+            {
+                "field": "metrics_sink.*",
+                "reason": "sink는 가동 시 path/interval 고정 — 재시작",
+            },
+            {
+                "field": "audit_log_path",
+                "reason": "AuditLogger는 가동 시 path 고정 — 재시작",
+            },
+        ]
+        snap = lt.snapshot()
+        logger.info("thresholds reloaded via /control/reload")
+        return ReloadResponse(applied_thresholds=snap, ignored=ignored)
 
     @app.get(
         "/recommendations",

@@ -85,8 +85,7 @@ async def _replay_async(case: dict[str, Any], case_path: Path) -> ReplayResult:
     """실제 비동기 실행 — `WavReplayAudioSource` + processing loop."""
     from mixpilot.main import (
         RecommendationBroker,
-        _build_lufs_targets,
-        _build_rms_dbfs_targets,
+        _build_live_thresholds,
         _processing_loop,
     )
 
@@ -191,32 +190,13 @@ async def _replay_async(case: dict[str, Any], case_path: Path) -> ReplayResult:
             controller,
             broker,
             channel_map,
-            _build_rms_dbfs_targets(settings),
             rule_toggles,
+            _build_live_thresholds(settings),
             lufs_buffer=lufs_buffer,
-            lufs_targets=_build_lufs_targets(settings),
             lufs_eval_interval_frames=settings.lufs_analysis.eval_interval_frames,
             feedback_detectors=feedback_detectors,
-            feedback_pnr_threshold_db=settings.feedback_analysis.pnr_threshold_db,
-            peak_headroom_threshold_dbfs=(
-                settings.peak_analysis.headroom_threshold_dbfs
-            ),
-            peak_oversample=settings.peak_analysis.oversample,
-            dynamic_range_low_threshold_db=(
-                settings.dynamic_range_analysis.low_threshold_db
-            ),
-            dynamic_range_high_threshold_db=(
-                settings.dynamic_range_analysis.high_threshold_db
-            ),
-            dynamic_range_silence_threshold_db=(
-                settings.dynamic_range_analysis.silence_threshold_db
-            ),
             lra_buffer=lra_buffer,
             lra_eval_interval_frames=settings.lra_analysis.eval_interval_frames,
-            lra_low_threshold_lu=settings.lra_analysis.low_threshold_lu,
-            lra_high_threshold_lu=settings.lra_analysis.high_threshold_lu,
-            lra_silence_threshold_lu=settings.lra_analysis.silence_threshold_lu,
-            phase_warn_threshold=settings.phase_analysis.warn_threshold,
             meter_broker=None,  # 미터 SSE는 회귀에서 불필요
         )
     )

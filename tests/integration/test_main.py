@@ -582,6 +582,55 @@ class TestKillSwitchEndpoint:
         fake_controller.force_dry_run.assert_called_once()
 
 
+class TestReloadEndpoint:
+    """POST /control/reload — graceful 임계 reload."""
+
+    def test_returns_applied_and_ignored(self, client: TestClient) -> None:
+        response = client.post("/control/reload")
+        assert response.status_code == 200
+        body = response.json()
+        # 라이브 갱신된 임계 dict.
+        applied = body["applied_thresholds"]
+        assert "rms_targets" in applied
+        assert "lufs_targets" in applied
+        assert "peak_headroom_threshold_dbfs" in applied
+        assert "peak_persistence_frames" in applied
+        # 재시작 필요 영역 안내.
+        ignored = body["ignored"]
+        assert len(ignored) > 0
+        for entry in ignored:
+            assert "field" in entry
+            assert "reason" in entry
+
+    def test_env_change_propagates_to_live_thresholds(
+        self,
+        client: TestClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # 가동 직후 디폴트 임계.
+        before = client.post("/control/reload").json()
+        before_headroom = before["applied_thresholds"]["peak_headroom_threshold_dbfs"]
+        # 환경 변수 갱신 후 reload — 새 값 반영.
+        monkeypatch.setenv("MIXPILOT_PEAK_ANALYSIS__HEADROOM_THRESHOLD_DBFS", "-3.0")
+        after = client.post("/control/reload").json()
+        assert after["applied_thresholds"]["peak_headroom_threshold_dbfs"] == -3.0
+        assert before_headroom != -3.0  # sanity
+
+    def test_mutates_app_state_live_thresholds(
+        self,
+        client: TestClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # app.state.live_thresholds가 reload로 *in-place* 변하는지.
+        app = client.app  # type: ignore[attr-defined]
+        lt_before = app.state.live_thresholds
+        monkeypatch.setenv("MIXPILOT_PHASE_ANALYSIS__WARN_THRESHOLD", "-0.5")
+        client.post("/control/reload")
+        # 동일 객체 참조여야 — 처리 루프가 같은 객체를 보고 있으므로.
+        assert app.state.live_thresholds is lt_before
+        assert lt_before.phase_warn_threshold == -0.5
+
+
 class TestCors:
     def test_default_no_cors_header(self, client: TestClient) -> None:
         # 디폴트 (dev_cors_enabled=False)에서는 CORS 미들웨어 미장착 — 헤더 없음.

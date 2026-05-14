@@ -146,6 +146,19 @@ class OperatingModeState(BaseModel):
     kill_switch_engaged: bool
 
 
+class ReloadResponse(BaseModel):
+    """`POST /control/reload` 응답 — graceful 임계 reload 결과 리포트.
+
+    `applied_thresholds`: 새 settings로부터 갱신된 임계·타깃 dict.
+    `ignored`: 라이브 변경 불가 영역(audio·buffer·detector persistence 등) —
+    값이 바뀌었더라도 재시작 전까지 반영 안 됨. 운영자가 명시적으로 인지하도록
+    각 항목에 사유 첨부.
+    """
+
+    applied_thresholds: dict[str, object]
+    ignored: list[dict[str, str]] = []
+
+
 class ChannelMeter(BaseModel):
     """단일 채널 미터 — 라벨·카테고리·RMS·peak·LRA·옥타브 스펙트럼."""
 

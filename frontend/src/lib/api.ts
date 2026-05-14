@@ -24,6 +24,7 @@ export type ChannelMapResponse = components["schemas"]["ChannelMapResponse"];
 export type RuleState = components["schemas"]["RuleState"];
 export type RulesResponse = components["schemas"]["RulesResponse"];
 export type OperatingModeState = components["schemas"]["OperatingModeState"];
+export type ReloadResponse = components["schemas"]["ReloadResponse"];
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -60,6 +61,18 @@ export async function setOperatingMode(
     );
   }
   return (await response.json()) as OperatingModeState;
+}
+
+/** graceful 임계 reload — 새 Settings()를 평가해 라이브 임계·타깃 갱신. */
+export async function reloadThresholds(): Promise<ReloadResponse> {
+  const response = await fetch(`${API_BASE_URL}/control/reload`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`/control/reload failed: ${response.status} ${detail}`);
+  }
+  return (await response.json()) as ReloadResponse;
 }
 
 /** ADR-0008 §3 킬 스위치 — controller를 즉시 dry-run으로 다운그레이드. */
