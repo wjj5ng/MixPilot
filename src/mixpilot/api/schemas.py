@@ -24,6 +24,7 @@ class HealthResponse(BaseModel):
     feedback_analysis_enabled: bool
     peak_analysis_enabled: bool
     dynamic_range_analysis_enabled: bool
+    lra_analysis_enabled: bool
     meter_stream_enabled: bool
 
 

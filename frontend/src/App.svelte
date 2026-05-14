@@ -196,6 +196,7 @@
         <dt>Feedback 감지</dt><dd>{health.feedback_analysis_enabled ? "활성" : "비활성"}</dd>
         <dt>Peak 감시</dt><dd>{health.peak_analysis_enabled ? "활성" : "비활성"}</dd>
         <dt>Dynamic Range</dt><dd>{health.dynamic_range_analysis_enabled ? "활성" : "비활성"}</dd>
+        <dt>LRA</dt><dd>{health.lra_analysis_enabled ? "활성" : "비활성"}</dd>
         <dt>미터 스트림</dt><dd>{health.meter_stream_enabled ? "활성" : "비활성"}</dd>
       </dl>
     {:else}

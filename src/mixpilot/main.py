@@ -53,6 +53,7 @@ from mixpilot.dsp import (
     rms_channels,
     to_dbfs,
 )
+from mixpilot.dsp.lra import MIN_DURATION_SECONDS as LRA_MIN_DURATION_SECONDS
 from mixpilot.infra.audio_capture import SoundDeviceAudioSource
 from mixpilot.infra.audit import AuditLogger
 from mixpilot.infra.channel_map import YamlChannelMetadata
@@ -61,6 +62,7 @@ from mixpilot.infra.synthetic_audio import SyntheticAudioSource
 from mixpilot.rules import (
     evaluate_all_channels,
     evaluate_all_channels_dynamic_range,
+    evaluate_all_channels_lra,
     evaluate_all_channels_lufs,
     evaluate_all_channels_peak,
     evaluate_all_feedback,
@@ -273,6 +275,11 @@ async def _processing_loop(
     dynamic_range_low_threshold_db: float = 6.0,
     dynamic_range_high_threshold_db: float = 20.0,
     dynamic_range_silence_threshold_db: float = 0.5,
+    lra_buffer: RollingBuffer | None = None,
+    lra_eval_interval_frames: int = 300,
+    lra_low_threshold_lu: float = 5.0,
+    lra_high_threshold_lu: float = 15.0,
+    lra_silence_threshold_lu: float = 0.1,
     meter_broker: MeterBroker | None = None,
     meter_publish_interval_frames: int = 5,
 ) -> None:
@@ -290,6 +297,7 @@ async def _processing_loop(
     """
     lufs_enabled = lufs_buffer is not None and lufs_targets is not None
     feedback_enabled = feedback_detectors is not None
+    lra_enabled = lra_buffer is not None
     meter_enabled = meter_broker is not None
     frame_count = 0
     try:
@@ -356,6 +364,31 @@ async def _processing_loop(
                         silence_threshold_db=dynamic_range_silence_threshold_db,
                     )
                 )
+
+            if lra_enabled:
+                assert lra_buffer is not None
+                lra_buffer.write(signal.samples)
+                if (
+                    frame_count % lra_eval_interval_frames == 0
+                    and lra_buffer.fill / signal.format.sample_rate
+                    >= LRA_MIN_DURATION_SECONDS
+                ):
+                    buffered_signal = Signal(
+                        samples=lra_buffer.snapshot(),
+                        format=signal.format,
+                        capture_seq=signal.capture_seq,
+                    )
+                    lra_channels = _split_signal_to_channels(
+                        buffered_signal, sources_by_id
+                    )
+                    recommendations.extend(
+                        evaluate_all_channels_lra(
+                            lra_channels,
+                            low_threshold_lu=lra_low_threshold_lu,
+                            high_threshold_lu=lra_high_threshold_lu,
+                            silence_threshold_lu=lra_silence_threshold_lu,
+                        )
+                    )
 
             if (
                 meter_enabled
@@ -427,6 +460,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     )
                     lufs_targets = _build_lufs_targets(cfg)
 
+                lra_buffer: RollingBuffer | None = None
+                if cfg.lra_analysis.enabled:
+                    capacity = int(
+                        cfg.audio.sample_rate * cfg.lra_analysis.buffer_seconds
+                    )
+                    lra_buffer = RollingBuffer(
+                        capacity_frames=capacity,
+                        num_channels=cfg.audio.num_channels,
+                        dtype=np.float32,
+                    )
+
                 feedback_detectors: dict[int, FeedbackDetector] | None = None
                 if cfg.feedback_analysis.enabled:
                     feedback_detectors = {
@@ -467,6 +511,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         dynamic_range_silence_threshold_db=(
                             cfg.dynamic_range_analysis.silence_threshold_db
                         ),
+                        lra_buffer=lra_buffer,
+                        lra_eval_interval_frames=(
+                            cfg.lra_analysis.eval_interval_frames
+                        ),
+                        lra_low_threshold_lu=cfg.lra_analysis.low_threshold_lu,
+                        lra_high_threshold_lu=cfg.lra_analysis.high_threshold_lu,
+                        lra_silence_threshold_lu=(
+                            cfg.lra_analysis.silence_threshold_lu
+                        ),
                         meter_broker=(
                             meter_broker if cfg.meter_stream.enabled else None
                         ),
@@ -477,13 +530,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
                 logger.info(
                     "audio started (mode=%s device=%s lufs=%s "
-                    "feedback=%s peak=%s dr=%s meters=%s)",
+                    "feedback=%s peak=%s dr=%s lra=%s meters=%s)",
                     cfg.m32.operating_mode.value,
                     cfg.audio.device_substring,
                     "on" if cfg.lufs_analysis.enabled else "off",
                     "on" if cfg.feedback_analysis.enabled else "off",
                     "on" if cfg.peak_analysis.enabled else "off",
                     "on" if cfg.dynamic_range_analysis.enabled else "off",
+                    "on" if cfg.lra_analysis.enabled else "off",
                     "on" if cfg.meter_stream.enabled else "off",
                 )
             except Exception:
@@ -544,6 +598,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             feedback_analysis_enabled=cfg.feedback_analysis.enabled,
             peak_analysis_enabled=cfg.peak_analysis.enabled,
             dynamic_range_analysis_enabled=cfg.dynamic_range_analysis.enabled,
+            lra_analysis_enabled=cfg.lra_analysis.enabled,
             meter_stream_enabled=cfg.meter_stream.enabled,
         )
 

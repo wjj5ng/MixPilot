@@ -115,6 +115,33 @@ class PeakAnalysisConfig(BaseModel):
     """True peak 오버샘플링 배수. ITU-R BS.1770-4 권고는 4."""
 
 
+class LraAnalysisConfig(BaseModel):
+    """LRA(EBU R128 Loudness Range) 분석 설정 — ADR-0009.
+
+    LRA는 3초 이상 신호가 필요한 *누적 메트릭*. 별도 RollingBuffer를 두고
+    주기적으로 평가한다(LUFS와 동일 패턴).
+    """
+
+    enabled: bool = False
+    """LRA 분석 활성화. 디폴트 off."""
+
+    buffer_seconds: float = Field(default=10.0, ge=3.0, le=60.0)
+    """LRA 평가용 누적 버퍼 길이. EBU 권장 ~10초 윈도우."""
+
+    eval_interval_frames: int = Field(default=300, gt=0)
+    """이 프레임마다 1번 평가. 512 sample @ 48kHz x 300 = ~3.2초 — 매번
+    충분한 신호가 buffer에 쌓이도록 보장."""
+
+    low_threshold_lu: float = Field(default=5.0, ge=0.0)
+    """이 미만이면 "압축 매우 강함" INFO 발화."""
+
+    high_threshold_lu: float = Field(default=15.0, gt=0.0)
+    """이 초과면 "다이내믹 폭 큼" INFO 발화."""
+
+    silence_threshold_lu: float = Field(default=0.1, ge=0.0)
+    """이 미만은 무음/단조로 간주 — 평가 스킵 (NO_LRA 케이스)."""
+
+
 class MeterStreamConfig(BaseModel):
     """라이브 미터 스트림(`/meters` SSE) 설정.
 
@@ -236,6 +263,7 @@ class Settings(BaseSettings):
     dynamic_range_analysis: DynamicRangeAnalysisConfig = Field(
         default_factory=DynamicRangeAnalysisConfig
     )
+    lra_analysis: LraAnalysisConfig = Field(default_factory=LraAnalysisConfig)
     meter_stream: MeterStreamConfig = Field(default_factory=MeterStreamConfig)
 
     dev_cors_enabled: bool = False

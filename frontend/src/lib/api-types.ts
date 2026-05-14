@@ -260,6 +260,8 @@ export interface components {
             peak_analysis_enabled: boolean;
             /** Dynamic Range Analysis Enabled */
             dynamic_range_analysis_enabled: boolean;
+            /** Lra Analysis Enabled */
+            lra_analysis_enabled: boolean;
             /** Meter Stream Enabled */
             meter_stream_enabled: boolean;
         };

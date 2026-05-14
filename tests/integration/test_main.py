@@ -68,6 +68,10 @@ class TestHealth:
         response = client.get("/health")
         assert response.json()["meter_stream_enabled"] is False
 
+    def test_reports_lra_analysis_default_false(self, client: TestClient) -> None:
+        response = client.get("/health")
+        assert response.json()["lra_analysis_enabled"] is False
+
     def test_response_has_no_unexpected_fields(self, client: TestClient) -> None:
         response = client.get("/health")
         assert set(response.json().keys()) == {
@@ -80,6 +84,7 @@ class TestHealth:
             "feedback_analysis_enabled",
             "peak_analysis_enabled",
             "dynamic_range_analysis_enabled",
+            "lra_analysis_enabled",
             "meter_stream_enabled",
         }
 
