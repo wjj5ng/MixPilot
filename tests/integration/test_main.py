@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -155,6 +156,113 @@ class TestRecentActionsEndpoint:
         assert entry["kind"] == "mute"
         assert entry["osc_messages"] == [{"address": "/ch/05/mix/on", "value": 0.0}]
         assert entry["reason"] == "테스트"
+
+
+class TestAuditLogEndpoint:
+    """ADR-0008 §3 — GET /control/audit-log/recent."""
+
+    def test_disabled_when_no_path(self, client: TestClient) -> None:
+        # 기본 Settings는 audit_log_path=None → enabled=false.
+        response = client.get("/control/audit-log/recent")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["enabled"] is False
+        assert body["entries"] == []
+
+    def test_returns_entries_from_jsonl(self, tmp_path: Path) -> None:
+        from mixpilot.infra import AuditLogger, AuditOutcome
+
+        audit_path = tmp_path / "audit.jsonl"
+        settings = Settings(audit_log_path=audit_path)
+        app = create_app(settings=settings)
+
+        # 직접 logger 객체에 write — controller wiring 우회.
+        ts_iter = iter([1.0, 2.0, 3.0])
+        logger = AuditLogger(path=audit_path, clock=lambda: next(ts_iter))
+        from mixpilot.domain import (
+            ChannelId,
+            Recommendation,
+            RecommendationKind,
+            Source,
+            SourceCategory,
+        )
+
+        def make_rec(ch: int) -> Recommendation:
+            return Recommendation(
+                target=Source(ChannelId(ch), SourceCategory.VOCAL, f"vox{ch}"),
+                kind=RecommendationKind.GAIN_ADJUST,
+                params={},
+                confidence=0.8,
+                reason=f"테스트 ch{ch}",
+            )
+
+        logger.record(
+            make_rec(1),
+            outcome=AuditOutcome.APPLIED,
+            effective_mode="auto",
+            osc_messages=[("/ch/01/mix/fader", 0.5)],
+        )
+        logger.record(
+            make_rec(2),
+            outcome=AuditOutcome.BLOCKED_GUARD,
+            effective_mode="auto",
+            reason="rate limit",
+        )
+        logger.record(
+            make_rec(3),
+            outcome=AuditOutcome.BLOCKED_POLICY,
+            effective_mode="assist",
+            reason="confidence below threshold",
+        )
+
+        client = TestClient(app)
+        body = client.get("/control/audit-log/recent").json()
+        assert body["enabled"] is True
+        assert len(body["entries"]) == 3
+        # 최신 → 과거 순.
+        outcomes = [e["outcome"] for e in body["entries"]]
+        assert outcomes == ["blocked_policy", "blocked_guard", "applied"]
+        # applied 항목의 OSC payload 확인.
+        applied = body["entries"][-1]
+        assert applied["osc_messages"] == [
+            {"address": "/ch/01/mix/fader", "value": 0.5}
+        ]
+        assert applied["label"] == "vox1"
+
+    def test_limit_query_param(self, tmp_path: Path) -> None:
+        from mixpilot.infra import AuditLogger, AuditOutcome
+
+        audit_path = tmp_path / "audit.jsonl"
+        settings = Settings(audit_log_path=audit_path)
+        app = create_app(settings=settings)
+        ts_iter = iter([float(i) for i in range(5)])
+        logger = AuditLogger(path=audit_path, clock=lambda: next(ts_iter))
+        from mixpilot.domain import (
+            ChannelId,
+            Recommendation,
+            RecommendationKind,
+            Source,
+            SourceCategory,
+        )
+
+        for _ in range(5):
+            logger.record(
+                Recommendation(
+                    target=Source(ChannelId(1), SourceCategory.VOCAL, "v"),
+                    kind=RecommendationKind.INFO,
+                    params={},
+                    confidence=0.5,
+                    reason="x",
+                ),
+                outcome=AuditOutcome.APPLIED,
+                effective_mode="auto",
+            )
+
+        client = TestClient(app)
+        body = client.get("/control/audit-log/recent?limit=2").json()
+        assert len(body["entries"]) == 2
+        # 5개 중 마지막 2개 → 타임스탬프 4.0, 3.0.
+        assert [e["timestamp"] for e in body["entries"]] == [4.0, 3.0]
 
 
 class TestKillSwitchEndpoint:

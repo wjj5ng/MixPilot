@@ -150,6 +150,76 @@ class TestOutcomes:
         assert data["outcome"] == outcome.value
 
 
+class TestReadRecent:
+    def test_no_path_returns_empty(self) -> None:
+        logger = AuditLogger(path=None)
+        assert logger.read_recent(limit=10) == []
+
+    def test_missing_file_returns_empty(self, tmp_path: Path) -> None:
+        logger = AuditLogger(path=tmp_path / "nope.jsonl")
+        assert logger.read_recent(limit=10) == []
+
+    def test_limit_zero_or_negative_returns_empty(self, tmp_path: Path) -> None:
+        p = tmp_path / "a.jsonl"
+        logger = AuditLogger(path=p)
+        logger.record(_rec(), outcome=AuditOutcome.APPLIED, effective_mode="auto")
+        assert logger.read_recent(limit=0) == []
+        assert logger.read_recent(limit=-5) == []
+
+    def test_returns_records_in_reverse_chronological_order(
+        self, tmp_path: Path
+    ) -> None:
+        p = tmp_path / "a.jsonl"
+        timestamps = iter([1.0, 2.0, 3.0])
+        logger = AuditLogger(path=p, clock=lambda: next(timestamps))
+        for ch in (1, 2, 3):
+            logger.record(
+                _rec(channel=ch),
+                outcome=AuditOutcome.APPLIED,
+                effective_mode="auto",
+            )
+        records = logger.read_recent(limit=10)
+        # 최신 → 과거.
+        assert [r["timestamp"] for r in records] == [3.0, 2.0, 1.0]
+        assert [r["channel"] for r in records] == [3, 2, 1]
+
+    def test_limit_truncates_to_last_n(self, tmp_path: Path) -> None:
+        p = tmp_path / "a.jsonl"
+        timestamps = iter([float(i) for i in range(10)])
+        logger = AuditLogger(path=p, clock=lambda: next(timestamps))
+        for _ in range(10):
+            logger.record(
+                _rec(), outcome=AuditOutcome.APPLIED, effective_mode="auto"
+            )
+        records = logger.read_recent(limit=3)
+        assert len(records) == 3
+        # 마지막 3개를 최신 순으로: 9, 8, 7.
+        assert [r["timestamp"] for r in records] == [9.0, 8.0, 7.0]
+
+    def test_skips_malformed_lines(self, tmp_path: Path) -> None:
+        p = tmp_path / "a.jsonl"
+        # 정상 1줄 + 깨진 1줄 + 정상 1줄.
+        logger = AuditLogger(path=p, clock=lambda: 1.0)
+        logger.record(_rec(), outcome=AuditOutcome.APPLIED, effective_mode="auto")
+        with p.open("a", encoding="utf-8") as f:
+            f.write("this is not json\n")
+        logger2 = AuditLogger(path=p, clock=lambda: 3.0)
+        logger2.record(_rec(), outcome=AuditOutcome.APPLIED, effective_mode="auto")
+        records = logger.read_recent(limit=10)
+        # 깨진 줄은 스킵 — 두 정상 줄만 반환.
+        assert len(records) == 2
+        assert {r["timestamp"] for r in records} == {1.0, 3.0}
+
+    def test_blank_lines_ignored(self, tmp_path: Path) -> None:
+        p = tmp_path / "a.jsonl"
+        logger = AuditLogger(path=p, clock=lambda: 5.0)
+        logger.record(_rec(), outcome=AuditOutcome.APPLIED, effective_mode="auto")
+        with p.open("a", encoding="utf-8") as f:
+            f.write("\n\n   \n")
+        records = logger.read_recent(limit=10)
+        assert len(records) == 1
+
+
 class TestDeterminism:
     def test_same_inputs_same_line(self, tmp_path: Path) -> None:
         rec = _rec(channel=3, confidence=0.85, reason="동일 입력")

@@ -13,12 +13,16 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from collections.abc import Callable, Sequence
 from enum import StrEnum
 from pathlib import Path
+from typing import Any
 
 from mixpilot.domain import Recommendation
+
+logger = logging.getLogger(__name__)
 
 
 class AuditOutcome(StrEnum):
@@ -81,3 +85,35 @@ class AuditLogger:
         # append-only — crash 시에도 직전까지 내용 보존.
         with self._path.open("a", encoding="utf-8") as f:
             f.write(line)
+
+    def read_recent(self, limit: int = 50) -> list[dict[str, Any]]:
+        """JSONL의 마지막 `limit` 레코드를 최신 순으로 반환.
+
+        - `path=None` 또는 파일이 아직 없으면 빈 리스트.
+        - 파싱 실패한 라인은 스킵 + 경고 로그 (감사 로그는 신뢰성 우선).
+        - 큰 파일에서도 O(n) 전체 스캔 — 회전(logrotate)으로 크기 제한 권장.
+
+        Args:
+            limit: 반환할 최대 레코드 수. 양수.
+
+        Returns:
+            최신 → 과거 순서의 dict 리스트. 각 항목 키는 `record()`가
+            기록한 필드 셋과 동일.
+        """
+        if limit <= 0:
+            return []
+        if self._path is None or not self._path.exists():
+            return []
+        records: list[dict[str, Any]] = []
+        with self._path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    records.append(json.loads(line))
+                except json.JSONDecodeError as e:
+                    logger.warning("skipping malformed audit line: %s", e)
+                    continue
+        # 마지막 limit개를 최신 → 과거 순서로.
+        return list(reversed(records[-limit:]))

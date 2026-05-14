@@ -17,6 +17,8 @@ export type ActionEntry = components["schemas"]["ActionEntry"];
 export type RecentActionsResponse = components["schemas"]["RecentActionsResponse"];
 export type MeterSnapshot = components["schemas"]["MeterSnapshotEvent"];
 export type ChannelMeter = components["schemas"]["ChannelMeter"];
+export type AuditEntry = components["schemas"]["AuditEntry"];
+export type AuditLogResponse = components["schemas"]["AuditLogResponse"];
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -46,6 +48,19 @@ export async function fetchRecentActions(): Promise<RecentActionsResponse> {
     throw new Error(`/control/recent-actions failed: ${response.status}`);
   }
   return (await response.json()) as RecentActionsResponse;
+}
+
+/** 감사 로그 JSONL의 최근 레코드 — ADR-0008 §3 영구 이력. */
+export async function fetchAuditLog(
+  limit: number = 50,
+): Promise<AuditLogResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/control/audit-log/recent?limit=${limit}`,
+  );
+  if (!response.ok) {
+    throw new Error(`/control/audit-log/recent failed: ${response.status}`);
+  }
+  return (await response.json()) as AuditLogResponse;
 }
 
 /**

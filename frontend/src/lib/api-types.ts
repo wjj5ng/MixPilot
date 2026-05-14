@@ -47,6 +47,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/control/audit-log/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Audit Log Recent
+         * @description ADR-0008 §3 감사 JSONL의 최근 레코드 — 영구 이력 조회.
+         *
+         *     `recent-actions`는 메모리 60초 윈도우(applied만), 이 엔드포인트는
+         *     디스크 JSONL을 읽어 *모든* 자동 액션 시도(applied·blocked_policy·
+         *     blocked_guard)를 최신 순으로 반환.
+         *
+         *     `audit_log_path`가 None이면 `enabled=false` + 빈 리스트.
+         */
+        get: operations["audit_log_recent_control_audit_log_recent_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/control/dry-run": {
         parameters: {
             query?: never;
@@ -140,6 +166,47 @@ export interface components {
             reason: string;
         };
         /**
+         * AuditEntry
+         * @description ADR-0008 §3 감사 JSONL의 한 레코드 — applied/blocked 모두 포함.
+         */
+        AuditEntry: {
+            /** Timestamp */
+            timestamp: number;
+            /** Outcome */
+            outcome: string;
+            /** Effective Mode */
+            effective_mode: string;
+            /** Reason */
+            reason: string;
+            /** Channel */
+            channel: number;
+            /** Category */
+            category: string;
+            /** Label */
+            label: string;
+            /** Kind */
+            kind: string;
+            /** Confidence */
+            confidence: number;
+            /** Rec Reason */
+            rec_reason: string;
+            /** Osc Messages */
+            osc_messages: components["schemas"]["OscMessage"][];
+        };
+        /**
+         * AuditLogResponse
+         * @description `GET /control/audit-log/recent` 응답.
+         *
+         *     `entries`는 최신 → 과거 순. `enabled=false`면 감사 로그 미설정(서버 운영
+         *     환경에서 `audit_log_path`가 None).
+         */
+        AuditLogResponse: {
+            /** Enabled */
+            enabled: boolean;
+            /** Entries */
+            entries: components["schemas"]["AuditEntry"][];
+        };
+        /**
          * ChannelMeter
          * @description 단일 채널의 미터 스냅샷 — 라벨·카테고리 + RMS·peak를 dBFS로.
          */
@@ -164,6 +231,11 @@ export interface components {
             status: string;
             /** Effective Mode */
             effective_mode?: string | null;
+        };
+        /** HTTPValidationError */
+        HTTPValidationError: {
+            /** Detail */
+            detail?: components["schemas"]["ValidationError"][];
         };
         /**
          * HealthResponse
@@ -249,6 +321,19 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /** ValidationError */
+        ValidationError: {
+            /** Location */
+            loc: (string | number)[];
+            /** Message */
+            msg: string;
+            /** Error Type */
+            type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
+        };
     };
     responses: never;
     parameters: never;
@@ -294,6 +379,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecentActionsResponse"];
+                };
+            };
+        };
+    };
+    audit_log_recent_control_audit_log_recent_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditLogResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

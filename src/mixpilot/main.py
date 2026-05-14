@@ -29,6 +29,8 @@ from fastapi.responses import StreamingResponse
 
 from mixpilot.api.schemas import (
     ActionEntry,
+    AuditEntry,
+    AuditLogResponse,
     ControlResponse,
     HealthResponse,
     MeterSnapshotEvent,
@@ -384,6 +386,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     cfg = settings or get_settings()
     broker = RecommendationBroker()
     meter_broker = MeterBroker()
+    # audit_log_path가 None이면 record()/read_recent()가 모두 no-op.
+    audit_logger = AuditLogger(path=cfg.audit_log_path)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -399,11 +403,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     )
                 else:
                     audio = SoundDeviceAudioSource(cfg.audio)
-                audit_logger = (
-                    AuditLogger(path=cfg.audit_log_path)
-                    if cfg.audit_log_path is not None
-                    else None
-                )
                 controller = M32OscController(
                     cfg.m32,
                     audit_logger=audit_logger,
@@ -521,6 +520,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.broker = broker
     app.state.controller = None  # lifespan에서 audio.enabled=True면 채워진다.
     app.state.action_history = action_history
+    app.state.audit_logger = audit_logger
 
     if cfg.dev_cors_enabled:
         app.add_middleware(
@@ -571,6 +571,44 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return RecentActionsResponse(
             entries=entries, window_seconds=history.window_seconds
         )
+
+    @app.get("/control/audit-log/recent", response_model=AuditLogResponse)
+    async def audit_log_recent(
+        request: Request, limit: int = 50
+    ) -> AuditLogResponse:
+        """ADR-0008 §3 감사 JSONL의 최근 레코드 — 영구 이력 조회.
+
+        `recent-actions`는 메모리 60초 윈도우(applied만), 이 엔드포인트는
+        디스크 JSONL을 읽어 *모든* 자동 액션 시도(applied·blocked_policy·
+        blocked_guard)를 최신 순으로 반환.
+
+        `audit_log_path`가 None이면 `enabled=false` + 빈 리스트.
+        """
+        if limit < 1 or limit > 500:
+            limit = 50
+        audit: AuditLogger = request.app.state.audit_logger
+        enabled = audit.path is not None
+        raw = audit.read_recent(limit=limit) if enabled else []
+        entries = [
+            AuditEntry(
+                timestamp=r["timestamp"],
+                outcome=r["outcome"],
+                effective_mode=r["effective_mode"],
+                reason=r.get("reason", ""),
+                channel=int(r["channel"]),
+                category=r["category"],
+                label=r.get("label", ""),
+                kind=r["kind"],
+                confidence=float(r["confidence"]),
+                rec_reason=r.get("rec_reason", ""),
+                osc_messages=[
+                    OscMessage(address=addr, value=value)
+                    for addr, value in r.get("osc_messages", [])
+                ],
+            )
+            for r in raw
+        ]
+        return AuditLogResponse(enabled=enabled, entries=entries)
 
     @app.post("/control/dry-run", response_model=ControlResponse)
     async def force_dry_run(request: Request) -> ControlResponse:

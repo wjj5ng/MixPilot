@@ -61,6 +61,33 @@ class RecentActionsResponse(BaseModel):
     window_seconds: float
 
 
+class AuditEntry(BaseModel):
+    """ADR-0008 §3 감사 JSONL의 한 레코드 — applied/blocked 모두 포함."""
+
+    timestamp: float
+    outcome: str
+    effective_mode: str
+    reason: str
+    channel: int
+    category: str
+    label: str
+    kind: str
+    confidence: float
+    rec_reason: str
+    osc_messages: list[OscMessage]
+
+
+class AuditLogResponse(BaseModel):
+    """`GET /control/audit-log/recent` 응답.
+
+    `entries`는 최신 → 과거 순. `enabled=false`면 감사 로그 미설정(서버 운영
+    환경에서 `audit_log_path`가 None).
+    """
+
+    enabled: bool
+    entries: list[AuditEntry]
+
+
 class ChannelMeter(BaseModel):
     """단일 채널의 미터 스냅샷 — 라벨·카테고리 + RMS·peak를 dBFS로."""
 

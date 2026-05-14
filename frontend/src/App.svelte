@@ -2,12 +2,14 @@
   import { onMount, onDestroy } from "svelte";
   import Meters from "./Meters.svelte";
   import {
+    fetchAuditLog,
     fetchHealth,
     fetchRecentActions,
     forceDryRun,
     subscribeMeters,
     subscribeRecommendations,
     type ActionEntry,
+    type AuditEntry,
     type ChannelMeter,
     type HealthResponse,
     type RecommendationPayload,
@@ -22,13 +24,18 @@
   let killSwitchBusy = $state(false);
   let meterChannels = $state<ChannelMeter[]>([]);
   let metersConnected = $state(false);
+  let auditEntries = $state<AuditEntry[]>([]);
+  let auditEnabled = $state<boolean | null>(null);
 
   const MAX_VISIBLE_RECS = 50;
   const RECENT_ACTIONS_POLL_MS = 5_000;
+  const AUDIT_LOG_POLL_MS = 10_000;
+  const AUDIT_LIMIT = 50;
 
   let unsubscribe: (() => void) | null = null;
   let unsubscribeMeters: (() => void) | null = null;
   let recentActionsTimer: ReturnType<typeof setInterval> | null = null;
+  let auditLogTimer: ReturnType<typeof setInterval> | null = null;
 
   async function refreshRecentActions(): Promise<void> {
     try {
@@ -36,6 +43,16 @@
       recentActions = data.entries;
     } catch (e) {
       console.warn("recent-actions fetch failed", e);
+    }
+  }
+
+  async function refreshAuditLog(): Promise<void> {
+    try {
+      const data = await fetchAuditLog(AUDIT_LIMIT);
+      auditEnabled = data.enabled;
+      auditEntries = data.entries;
+    } catch (e) {
+      console.warn("audit-log fetch failed", e);
     }
   }
 
@@ -63,6 +80,9 @@
     await refreshRecentActions();
     recentActionsTimer = setInterval(refreshRecentActions, RECENT_ACTIONS_POLL_MS);
 
+    await refreshAuditLog();
+    auditLogTimer = setInterval(refreshAuditLog, AUDIT_LOG_POLL_MS);
+
     unsubscribe = subscribeRecommendations(
       (rec) => {
         streamConnected = true;
@@ -89,7 +109,38 @@
     if (unsubscribe) unsubscribe();
     if (unsubscribeMeters) unsubscribeMeters();
     if (recentActionsTimer !== null) clearInterval(recentActionsTimer);
+    if (auditLogTimer !== null) clearInterval(auditLogTimer);
   });
+
+  function outcomeLabel(outcome: string): string {
+    return (
+      {
+        applied: "적용",
+        blocked_policy: "정책 차단",
+        blocked_guard: "가드 차단",
+      }[outcome] ?? outcome
+    );
+  }
+
+  function outcomeClass(outcome: string): string {
+    return (
+      {
+        applied: "outcome-applied",
+        blocked_policy: "outcome-blocked",
+        blocked_guard: "outcome-blocked",
+      }[outcome] ?? ""
+    );
+  }
+
+  function formatAuditTime(ts: number): string {
+    const d = new Date(ts * 1000);
+    return d.toLocaleString("ko-KR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+  }
 
   function kindLabel(kind: string): string {
     return (
@@ -200,6 +251,43 @@
             </div>
             {#if action.reason}
               <div class="action-reason">{action.reason}</div>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </section>
+
+  <section class="card">
+    <h2>
+      감사 로그 ({auditEntries.length})
+      <span class="hint-inline">— JSONL 영구 이력, 10초마다 새로고침</span>
+    </h2>
+    {#if auditEnabled === false}
+      <p class="hint">
+        <code>MIXPILOT_AUDIT_LOG_PATH</code>가 설정되지 않아 감사 로그가
+        비활성입니다. ADR-0008 §3.8 참조.
+      </p>
+    {:else if auditEntries.length === 0}
+      <p class="hint">아직 자동 액션 시도가 없습니다.</p>
+    {:else}
+      <ul class="audit-list">
+        {#each auditEntries as entry, i (i)}
+          <li class="audit-entry {outcomeClass(entry.outcome)}">
+            <div class="audit-head">
+              <span class="audit-time">{formatAuditTime(entry.timestamp)}</span>
+              <span class="audit-channel">
+                ch{String(entry.channel).padStart(2, "0")}
+                {#if entry.label}<span class="audit-label">{entry.label}</span>{/if}
+              </span>
+              <span class="audit-kind">{kindLabel(entry.kind)}</span>
+              <span class="audit-outcome">{outcomeLabel(entry.outcome)}</span>
+            </div>
+            {#if entry.reason}
+              <div class="audit-reason">{entry.reason}</div>
+            {/if}
+            {#if entry.rec_reason}
+              <div class="audit-rec-reason">→ {entry.rec_reason}</div>
             {/if}
           </li>
         {/each}
@@ -331,6 +419,83 @@
   .stream-status.connected {
     background: #1e3a2e;
     color: #6fcf97;
+  }
+
+  /* 감사 로그 카드 */
+  .audit-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    max-height: 24rem;
+    overflow-y: auto;
+  }
+  .audit-entry {
+    background: #232730;
+    border-left: 3px solid #4a5263;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0 0.25rem 0.25rem 0;
+    font-size: 0.85rem;
+  }
+  .audit-entry.outcome-applied {
+    border-left-color: #6fcf97;
+  }
+  .audit-entry.outcome-blocked {
+    border-left-color: #ffb547;
+  }
+  .audit-head {
+    display: flex;
+    gap: 0.65rem;
+    align-items: baseline;
+    flex-wrap: wrap;
+  }
+  .audit-time {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #5a6270;
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .audit-channel {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #8b95a3;
+  }
+  .audit-label {
+    color: #c8cdd6;
+    margin-left: 0.25rem;
+    font-family: inherit;
+  }
+  .audit-kind {
+    color: #c8cdd6;
+    font-weight: 500;
+  }
+  .audit-outcome {
+    margin-left: auto;
+    font-size: 0.75rem;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    background: #2a2f39;
+    color: #c8cdd6;
+  }
+  .outcome-applied .audit-outcome {
+    background: #1e3a2e;
+    color: #6fcf97;
+  }
+  .outcome-blocked .audit-outcome {
+    background: #3d2e1a;
+    color: #ffb547;
+  }
+  .audit-reason {
+    color: #b6bdc7;
+    font-size: 0.8rem;
+    margin-top: 0.2rem;
+  }
+  .audit-rec-reason {
+    color: #8b95a3;
+    font-size: 0.8rem;
+    font-style: italic;
+    margin-top: 0.1rem;
   }
 
   .rec-controls {
