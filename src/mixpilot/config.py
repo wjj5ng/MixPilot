@@ -115,6 +115,20 @@ class PeakAnalysisConfig(BaseModel):
     """True peak 오버샘플링 배수. ITU-R BS.1770-4 권고는 4."""
 
 
+class MeterStreamConfig(BaseModel):
+    """라이브 미터 스트림(`/meters` SSE) 설정.
+
+    매 N 프레임 채널별 RMS·peak를 dBFS로 계산해 브로커에 push.
+    Throttling으로 클라이언트 부담·네트워크 트래픽을 제한 (전형값 10~25 Hz).
+    """
+
+    enabled: bool = False
+    """미터 스트림 활성화. 디폴트 off — frontend가 켤 때만 켠다."""
+
+    publish_interval_frames: int = Field(default=5, gt=0)
+    """이 프레임마다 1번 publish. 512 sample/block @ 48kHz x 5 = ~107ms = ~9 Hz."""
+
+
 class DynamicRangeAnalysisConfig(BaseModel):
     """라이브 dynamic range (crest factor) 감시 설정.
 
@@ -222,6 +236,7 @@ class Settings(BaseSettings):
     dynamic_range_analysis: DynamicRangeAnalysisConfig = Field(
         default_factory=DynamicRangeAnalysisConfig
     )
+    meter_stream: MeterStreamConfig = Field(default_factory=MeterStreamConfig)
 
     dev_cors_enabled: bool = False
     """프론트엔드 dev 서버(http://localhost:5173)에서의 CORS 요청을 허용한다.

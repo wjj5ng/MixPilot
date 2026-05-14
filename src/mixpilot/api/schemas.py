@@ -24,6 +24,7 @@ class HealthResponse(BaseModel):
     feedback_analysis_enabled: bool
     peak_analysis_enabled: bool
     dynamic_range_analysis_enabled: bool
+    meter_stream_enabled: bool
 
 
 class ControlResponse(BaseModel):
@@ -58,6 +59,25 @@ class RecentActionsResponse(BaseModel):
 
     entries: list[ActionEntry]
     window_seconds: float
+
+
+class ChannelMeter(BaseModel):
+    """단일 채널의 미터 스냅샷 — RMS·peak를 dBFS로."""
+
+    channel: int
+    rms_dbfs: float
+    peak_dbfs: float
+
+
+class MeterSnapshotEvent(BaseModel):
+    """`/meters` SSE 스트림의 단일 이벤트 페이로드.
+
+    한 프레임의 채널별 미터값 묶음. 클라이언트는 capture_seq를 보고 누락
+    여부를 추적 가능 (단조 증가).
+    """
+
+    capture_seq: int
+    channels: list[ChannelMeter]
 
 
 class RecommendationEvent(BaseModel):

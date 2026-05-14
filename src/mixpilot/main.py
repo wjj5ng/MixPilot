@@ -31,6 +31,7 @@ from mixpilot.api.schemas import (
     ActionEntry,
     ControlResponse,
     HealthResponse,
+    MeterSnapshotEvent,
     OscMessage,
     RecentActionsResponse,
     RecommendationEvent,
@@ -44,7 +45,12 @@ from mixpilot.domain import (
     Source,
     SourceCategory,
 )
-from mixpilot.dsp import MIN_DURATION_SECONDS
+from mixpilot.dsp import (
+    MIN_DURATION_SECONDS,
+    peak_channels,
+    rms_channels,
+    to_dbfs,
+)
 from mixpilot.infra.audio_capture import SoundDeviceAudioSource
 from mixpilot.infra.audit import AuditLogger
 from mixpilot.infra.channel_map import YamlChannelMetadata
@@ -96,6 +102,68 @@ class RecommendationBroker:
     @property
     def subscriber_count(self) -> int:
         return len(self._subscribers)
+
+
+class MeterBroker:
+    """채널별 미터 스냅샷을 SSE 구독자에 fan-out 하는 in-memory pub/sub.
+
+    미터는 *최신만이 가치 있음* — 큐가 가득 차면 옛 스냅샷을 드롭하고 새 것을
+    넣는다(`drop_oldest=True`). 큐 크기가 작아도(기본 2) 끊김 없는 표시 가능.
+    """
+
+    def __init__(self, max_queue_size: int = 2) -> None:
+        self._max_queue_size = max_queue_size
+        self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
+
+    def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(
+            maxsize=self._max_queue_size
+        )
+        self._subscribers.add(queue)
+        return queue
+
+    def unsubscribe(self, queue: asyncio.Queue[dict[str, Any]]) -> None:
+        self._subscribers.discard(queue)
+
+    def publish(self, payload: dict[str, Any]) -> None:
+        for queue in list(self._subscribers):
+            # 옛 스냅샷보다 최신이 우선 — 가득 차면 가장 오래된 것 제거 후 푸시.
+            while queue.full():
+                try:
+                    queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+            try:
+                queue.put_nowait(payload)
+            except asyncio.QueueFull:
+                pass  # 동시성 코너: 다른 코루틴이 가득 채움. 다음 사이클에 캐치업.
+
+    @property
+    def subscriber_count(self) -> int:
+        return len(self._subscribers)
+
+
+def _compute_meter_payload(
+    samples_2d: np.ndarray, capture_seq: int
+) -> dict[str, Any]:
+    """채널별 RMS·peak dBFS를 SSE 페이로드로 직렬화.
+
+    Args:
+        samples_2d: shape (frames, channels) 2D ndarray.
+        capture_seq: 원천 Signal의 단조 시퀀스.
+    """
+    rms_lin = rms_channels(samples_2d)
+    peak_lin = peak_channels(samples_2d)
+    channels = []
+    for ch_idx in range(samples_2d.shape[1]):
+        channels.append(
+            {
+                "channel": ch_idx + 1,
+                "rms_dbfs": to_dbfs(float(rms_lin[ch_idx])),
+                "peak_dbfs": to_dbfs(float(peak_lin[ch_idx])),
+            }
+        )
+    return {"capture_seq": int(capture_seq), "channels": channels}
 
 
 def _split_signal_to_channels(
@@ -193,6 +261,8 @@ async def _processing_loop(
     dynamic_range_low_threshold_db: float = 6.0,
     dynamic_range_high_threshold_db: float = 20.0,
     dynamic_range_silence_threshold_db: float = 0.5,
+    meter_broker: MeterBroker | None = None,
+    meter_publish_interval_frames: int = 5,
 ) -> None:
     """오디오 프레임 → 룰 평가 → 제어 송신 + 브로커 푸시.
 
@@ -203,9 +273,12 @@ async def _processing_loop(
       detector 업데이트. 지속 검증된 peaks만 Recommendation 발화.
     - Peak 룰: `peak_enabled=True`면 매 프레임 채널별 true peak 평가, 헤드룸
       임계 이상이면 INFO 발화.
+    - 미터 스트림: `meter_broker`가 주입되었으면 `meter_publish_interval_frames`
+      마다 채널별 RMS·peak dBFS를 broker에 publish.
     """
     lufs_enabled = lufs_buffer is not None and lufs_targets is not None
     feedback_enabled = feedback_detectors is not None
+    meter_enabled = meter_broker is not None
     frame_count = 0
     try:
         async for signal in audio.stream():
@@ -272,6 +345,18 @@ async def _processing_loop(
                     )
                 )
 
+            if (
+                meter_enabled
+                and frame_count % meter_publish_interval_frames == 0
+            ):
+                assert meter_broker is not None
+                samples_2d = signal.samples
+                if samples_2d.ndim == 1:
+                    samples_2d = samples_2d.reshape(-1, 1)
+                meter_broker.publish(
+                    _compute_meter_payload(samples_2d, signal.capture_seq)
+                )
+
             for rec in recommendations:
                 await controller.apply(rec)
                 broker.publish(rec)
@@ -291,6 +376,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     """
     cfg = settings or get_settings()
     broker = RecommendationBroker()
+    meter_broker = MeterBroker()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -375,17 +461,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         dynamic_range_silence_threshold_db=(
                             cfg.dynamic_range_analysis.silence_threshold_db
                         ),
+                        meter_broker=(
+                            meter_broker if cfg.meter_stream.enabled else None
+                        ),
+                        meter_publish_interval_frames=(
+                            cfg.meter_stream.publish_interval_frames
+                        ),
                     )
                 )
                 logger.info(
-                    "audio started "
-                    "(mode=%s device=%s lufs=%s feedback=%s peak=%s dr=%s)",
+                    "audio started (mode=%s device=%s lufs=%s "
+                    "feedback=%s peak=%s dr=%s meters=%s)",
                     cfg.m32.operating_mode.value,
                     cfg.audio.device_substring,
                     "on" if cfg.lufs_analysis.enabled else "off",
                     "on" if cfg.feedback_analysis.enabled else "off",
                     "on" if cfg.peak_analysis.enabled else "off",
                     "on" if cfg.dynamic_range_analysis.enabled else "off",
+                    "on" if cfg.meter_stream.enabled else "off",
                 )
             except Exception:
                 logger.exception(
@@ -444,6 +537,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             feedback_analysis_enabled=cfg.feedback_analysis.enabled,
             peak_analysis_enabled=cfg.peak_analysis.enabled,
             dynamic_range_analysis_enabled=cfg.dynamic_range_analysis.enabled,
+            meter_stream_enabled=cfg.meter_stream.enabled,
         )
 
     @app.get("/control/recent-actions", response_model=RecentActionsResponse)
@@ -528,6 +622,45 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
             finally:
                 broker.unsubscribe(queue)
+
+        return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+    @app.get(
+        "/meters",
+        responses={
+            200: {
+                "model": MeterSnapshotEvent,
+                "description": (
+                    "Server-Sent Events 스트림. 각 'data:' 라인 본문이 "
+                    "MeterSnapshotEvent JSON. 미터는 throttled "
+                    "(`meter_stream.publish_interval_frames`)."
+                ),
+                "content": {"text/event-stream": {}},
+            }
+        },
+    )
+    async def stream_meters(request: Request) -> StreamingResponse:
+        """채널별 RMS·peak dBFS 스트림.
+
+        `meter_stream.enabled`가 false면 연결은 성립하되 데이터 이벤트가
+        생기지 않는다(keep-alive만 송신).
+        """
+        queue = meter_broker.subscribe()
+
+        async def event_generator() -> AsyncIterator[str]:
+            try:
+                yield "event: subscribed\ndata: {}\n\n"
+                while True:
+                    if await request.is_disconnected():
+                        break
+                    try:
+                        payload = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    except TimeoutError:
+                        yield ": keep-alive\n\n"
+                        continue
+                    yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+            finally:
+                meter_broker.unsubscribe(queue)
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
 

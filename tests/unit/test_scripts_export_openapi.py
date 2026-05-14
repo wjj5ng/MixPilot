@@ -50,6 +50,7 @@ class TestExportOpenapi:
             "feedback_analysis_enabled",
             "peak_analysis_enabled",
             "dynamic_range_analysis_enabled",
+            "meter_stream_enabled",
         }
 
     def test_recommendation_event_has_expected_fields(self) -> None:
