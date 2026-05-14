@@ -122,12 +122,13 @@ M32 32채널을 입력 소스 카테고리(보컬·설교자·성가대·악기)
 |---|---|---|
 | [ADR-0001](docs/adr/0001-dsp-helper-libraries.md) | DSP 보조 라이브러리 — librosa 미도입 | Accepted |
 | [ADR-0002](docs/adr/0002-dashboard-realtime-push.md) | 대시보드 실시간 push — SSE 채택 | Accepted |
-| [ADR-0003](docs/adr/0003-metric-storage.md) | 메트릭 저장소 — JSONL 감사로 충분, 시계열 보류 | Accepted |
+| [ADR-0003](docs/adr/0003-metric-storage.md) | 메트릭 저장소 — JSONL 감사로 충분, 시계열 보류 | Superseded by 0010 |
 | [ADR-0004](docs/adr/0004-audio-input-m32-usb.md) | 오디오 입력 — M32 USB 직접 캡처 (sounddevice) | Accepted |
 | [ADR-0005](docs/adr/0005-control-output-x32-osc.md) | 제어 출력 — X32 OSC over UDP로 M32 직결 | Accepted |
 | [ADR-0006](docs/adr/0006-reaper-scope.md) | Reaper의 역할 범위 — 운영 경로 제외 | Accepted |
 | [ADR-0007](docs/adr/0007-frontend-stack.md) | 프론트엔드 — Svelte + Vite (vanilla SPA), monorepo | Accepted |
 | [ADR-0008](docs/adr/0008-auto-response-safety-policy.md) | 자동 응답 안전 정책 — Kind별 자동 적용 범위·안전장치 | Accepted |
 | [ADR-0009](docs/adr/0009-lra-implementation.md) | LRA — EBU R128 직접 구현, 48 kHz 한정 | Accepted |
+| [ADR-0010](docs/adr/0010-metric-timeseries-persistence.md) | 메트릭 시계열 영속화 — JsonlMetricsSink 도입 (ADR-0003 supersede) | Accepted |
 
 <!-- 새 결정 추가 시 행 추가 + `docs/adr/NNNN-<title>.md`에 본문 -->

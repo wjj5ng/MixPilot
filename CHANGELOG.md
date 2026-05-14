@@ -26,6 +26,17 @@ MixPilot의 모든 주목할 만한 변경 사항을 기록합니다.
 
 ### Added (Unreleased, continued)
 
+- **메트릭 시계열 영속화** (ADR-0010, ADR-0003 supersede) —
+  `MIXPILOT_METRICS_SINK__ENABLED=true` +
+  `MIXPILOT_METRICS_SINK__OUTPUT_PATH=./logs/metrics-%Y%m%d-%H%M%S.jsonl`로
+  채널별 RMS·Peak·LRA·Phase를 JSONL append. 디폴트 1 Hz throttle. UI의 시계열
+  메모리 2분 윈도우를 service 단위 영구 자산으로 확장 — 사후 회고·트렌드 분석.
+  - `infra.metrics_sink.JsonlMetricsSink`: `maybe_write()` 시간 기반 throttle.
+  - `MetricsSinkConfig`: enabled / output_path(strftime 패턴) / interval_seconds.
+  - 미터 publish 위치에서 동반 호출. octave_bands는 부피 커서 영속화에서 제외.
+  - HealthResponse.metrics_sink_enabled로 UI에서 노출.
+  - 단위 테스트 9건 (no-path/throttle/payload slim/append).
+
 - **service별 audit log 자동 분리** — `MIXPILOT_AUDIT_LOG_PATH=./logs/audit-%Y%m%d.jsonl`
   처럼 strftime 패턴을 적으면 서버 가동 시점에 자동 expand + 부모 디렉토리
   mkdir. 운영자가 매번 환경 변수 손볼 필요 없음.

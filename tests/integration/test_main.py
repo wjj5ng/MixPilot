@@ -87,6 +87,7 @@ class TestHealth:
             "lra_analysis_enabled",
             "phase_analysis_enabled",
             "meter_stream_enabled",
+            "metrics_sink_enabled",
         }
 
 
