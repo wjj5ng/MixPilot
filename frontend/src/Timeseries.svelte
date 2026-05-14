@@ -1,34 +1,33 @@
 <script lang="ts">
   /**
-   * 단일 채널의 RMS·Peak dBFS 시계열 그래프 — Canvas 기반.
+   * 다채널 RMS·Peak dBFS 시계열 오버레이 — Canvas 기반.
    *
-   * 데이터는 ring buffer로 App에서 누적. 본 컴포넌트는 *순수 시각화* — 새 props
-   * 들어올 때마다 canvas redraw.
+   * 각 시리즈는 색이 다른 RMS 실선 + Peak 점선. 채널 비교 시 같은 시간축 위에
+   * 라이브 변동 패턴을 한눈에 확인. 데이터는 App의 ring buffer에서 누적.
    */
 
   type Point = { t: number; rms: number; peak: number };
+  type Series = {
+    channel: number;
+    label: string;
+    points: Point[];
+    color: string;
+  };
 
   let {
-    points = [],
-    label = "",
-    channel = 0,
+    series = [],
     windowSeconds = 60,
   }: {
-    points: Point[];
-    label?: string;
-    channel?: number;
+    series: Series[];
     windowSeconds?: number;
   } = $props();
 
-  // dBFS 스케일.
   const DB_FLOOR = -60;
   const DB_CEILING = 0;
 
   let canvas = $state<HTMLCanvasElement | null>(null);
-
-  // canvas resize 대응 — 부모 폭에 맞춰 그림.
   let canvasWidth = $state(640);
-  const canvasHeight = 160;
+  const canvasHeight = 180;
 
   $effect(() => {
     if (!canvas) return;
@@ -46,11 +45,10 @@
   function draw(ctx: CanvasRenderingContext2D, w: number, h: number): void {
     ctx.clearRect(0, 0, w, h);
 
-    // 배경.
     ctx.fillStyle = "#1a1d24";
     ctx.fillRect(0, 0, w, h);
 
-    // 격자 — Y(dB) -60, -40, -20, 0 라인.
+    // Y 격자.
     ctx.strokeStyle = "#262a33";
     ctx.lineWidth = 1;
     ctx.font = "10px ui-monospace, monospace";
@@ -63,7 +61,6 @@
       ctx.stroke();
       ctx.fillText(`${db}`, 4, y - 2);
     }
-    // -6, -12 라인 — 임계 시각화 (점선).
     ctx.setLineDash([2, 3]);
     for (const db of [-6, -12]) {
       const y = dbToY(db, h);
@@ -74,75 +71,86 @@
     }
     ctx.setLineDash([]);
 
-    if (points.length < 2) {
+    // 시리즈 없거나 비어있으면 placeholder.
+    const hasData = series.some((s) => s.points.length >= 2);
+    if (!hasData) {
       ctx.fillStyle = "#5a6270";
       ctx.font = "11px sans-serif";
       ctx.fillText("데이터 누적 중…", w / 2 - 30, h / 2);
       return;
     }
 
-    const now = points[points.length - 1].t;
+    // 시간 범위 — 모든 시리즈에서 가장 최근 t.
+    let now = 0;
+    for (const s of series) {
+      if (s.points.length === 0) continue;
+      const last = s.points[s.points.length - 1].t;
+      if (last > now) now = last;
+    }
+    if (now === 0) return;
     const tStart = now - windowSeconds * 1000;
 
-    // X축 — 시간 ticks (10초마다).
+    // X tick.
     ctx.fillStyle = "#5a6270";
-    for (let s = 0; s <= windowSeconds; s += 10) {
-      const t = now - (windowSeconds - s) * 1000;
+    for (let sec = 0; sec <= windowSeconds; sec += 10) {
+      const t = now - (windowSeconds - sec) * 1000;
       const x = tToX(t, tStart, now, w);
       ctx.beginPath();
       ctx.moveTo(x, h - 12);
       ctx.lineTo(x, h - 8);
       ctx.strokeStyle = "#262a33";
       ctx.stroke();
-      const sec = windowSeconds - s;
-      if (sec === 0) {
-        ctx.fillText("now", x - 8, h - 1);
-      } else {
-        ctx.fillText(`-${sec}s`, x - 8, h - 1);
-      }
+      const left = windowSeconds - sec;
+      if (left === 0) ctx.fillText("now", x - 8, h - 1);
+      else ctx.fillText(`-${left}s`, x - 8, h - 1);
     }
 
-    // Peak 곡선 — 얇은 점선 (먼저 그려 RMS 뒤로).
-    ctx.strokeStyle = "#ffb547";
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 2]);
-    ctx.beginPath();
-    let started = false;
-    for (const p of points) {
-      if (p.t < tStart) continue;
-      const x = tToX(p.t, tStart, now, w);
-      const y = dbToY(p.peak, h);
-      if (!started) {
-        ctx.moveTo(x, y);
-        started = true;
-      } else {
-        ctx.lineTo(x, y);
+    // 각 시리즈: Peak(점선) 먼저 → RMS(실선) 위에.
+    for (const s of series) {
+      if (s.points.length < 2) continue;
+      ctx.strokeStyle = s.color;
+      ctx.globalAlpha = 0.55;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 2]);
+      ctx.beginPath();
+      let started = false;
+      for (const p of s.points) {
+        if (p.t < tStart) continue;
+        const x = tToX(p.t, tStart, now, w);
+        const y = dbToY(p.peak, h);
+        if (!started) {
+          ctx.moveTo(x, y);
+          started = true;
+        } else {
+          ctx.lineTo(x, y);
+        }
       }
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1.0;
     }
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // RMS 곡선 — 굵은 실선.
-    ctx.strokeStyle = "#6fcf97";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    started = false;
-    for (const p of points) {
-      if (p.t < tStart) continue;
-      const x = tToX(p.t, tStart, now, w);
-      const y = dbToY(p.rms, h);
-      if (!started) {
-        ctx.moveTo(x, y);
-        started = true;
-      } else {
-        ctx.lineTo(x, y);
+    for (const s of series) {
+      if (s.points.length < 2) continue;
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      let started = false;
+      for (const p of s.points) {
+        if (p.t < tStart) continue;
+        const x = tToX(p.t, tStart, now, w);
+        const y = dbToY(p.rms, h);
+        if (!started) {
+          ctx.moveTo(x, y);
+          started = true;
+        } else {
+          ctx.lineTo(x, y);
+        }
       }
+      ctx.stroke();
     }
-    ctx.stroke();
   }
 
   function dbToY(db: number, h: number): number {
-    // -60 floor → h-15, 0 ceiling → 5 (조금의 padding).
     const norm = Math.max(
       0,
       Math.min(1, (db - DB_FLOOR) / (DB_CEILING - DB_FLOOR)),
@@ -156,18 +164,20 @@
   }
 </script>
 
-<div
-  class="timeseries"
-  bind:clientWidth={canvasWidth}
->
+<div class="timeseries" bind:clientWidth={canvasWidth}>
   <div class="header">
-    <span class="title">
-      ch{String(channel).padStart(2, "0")} {label || "(미정)"}
-    </span>
-    <span class="legend">
-      <span class="legend-rms">━ RMS</span>
-      <span class="legend-peak">┄ Peak</span>
-    </span>
+    {#if series.length === 0}
+      <span class="title hint">선택된 채널 없음</span>
+    {:else}
+      <span class="legend">
+        {#each series as s (s.channel)}
+          <span class="legend-item" style="color: {s.color}">
+            ━ ch{String(s.channel).padStart(2, "0")} {s.label || ""}
+          </span>
+        {/each}
+      </span>
+      <span class="legend-note">실선=RMS · 점선=Peak</span>
+    {/if}
   </div>
   <canvas bind:this={canvas}></canvas>
 </div>
@@ -182,6 +192,8 @@
     align-items: baseline;
     margin-bottom: 0.3rem;
     font-size: 0.85rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
   .title {
     color: #c8cdd6;
@@ -189,14 +201,20 @@
   }
   .legend {
     display: flex;
-    gap: 0.6rem;
-    font-size: 0.75rem;
+    flex-wrap: wrap;
+    gap: 0.7rem;
+    font-size: 0.78rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
-  .legend-rms {
-    color: #6fcf97;
+  .legend-item {
+    white-space: nowrap;
   }
-  .legend-peak {
-    color: #ffb547;
+  .legend-note {
+    color: #5a6270;
+    font-size: 0.72rem;
+  }
+  .hint {
+    color: #5a6270;
   }
   canvas {
     display: block;

@@ -47,8 +47,12 @@
   type SeriesPoint = { t: number; rms: number; peak: number };
   const TIMESERIES_WINDOW_MS = 120_000; // 2분치 보관(최대 windowSeconds=120).
   let meterHistory = $state<Map<number, SeriesPoint[]>>(new Map());
-  let selectedTimeseriesChannel = $state<number | null>(null);
+  // 다채널 비교 — 채널 ID 선택 순서 보존(색 배정 + legend 정렬). 최대 4채널.
+  const MAX_COMPARE_CHANNELS = 4;
+  let selectedTimeseriesChannels = $state<number[]>([]);
   let timeseriesWindowSec = $state(60);
+  // 색 팔레트 — 선택 순서에 일관 매핑. 4색이면 충분히 구분 가능.
+  const TIMESERIES_PALETTE = ["#6fcf97", "#ffb547", "#6c8cff", "#e879f9"];
   let auditEntries = $state<AuditEntry[]>([]);
   let auditEnabled = $state<boolean | null>(null);
   let channelMap = $state<ChannelMapEntry[]>([]);
@@ -282,8 +286,8 @@
         }
         meterHistory = next;
         // 첫 데이터 도달 시 첫 채널을 디폴트 선택.
-        if (selectedTimeseriesChannel === null && snapshot.channels.length > 0) {
-          selectedTimeseriesChannel = snapshot.channels[0].channel;
+        if (selectedTimeseriesChannels.length === 0 && snapshot.channels.length > 0) {
+          selectedTimeseriesChannels = [snapshot.channels[0].channel];
         }
       },
       () => {
@@ -397,6 +401,40 @@
     recommendations = [];
     lastAckedAt = Date.now();
   }
+
+  function toggleTimeseriesChannel(channel: number): void {
+    const idx = selectedTimeseriesChannels.indexOf(channel);
+    if (idx >= 0) {
+      // 이미 선택 → 해제.
+      selectedTimeseriesChannels = selectedTimeseriesChannels.filter(
+        (c) => c !== channel,
+      );
+      return;
+    }
+    if (selectedTimeseriesChannels.length >= MAX_COMPARE_CHANNELS) {
+      // 한도 초과 — 가장 오래된 선택을 밀어내고 새로 추가.
+      selectedTimeseriesChannels = [
+        ...selectedTimeseriesChannels.slice(1),
+        channel,
+      ];
+      return;
+    }
+    selectedTimeseriesChannels = [...selectedTimeseriesChannels, channel];
+  }
+
+  // selectedTimeseriesChannels + meterChannels + meterHistory → Timeseries series.
+  // 선택 순서 보존 → 팔레트 색 매핑 일관.
+  const timeseriesSeries = $derived.by(() => {
+    return selectedTimeseriesChannels.map((chId, i) => {
+      const meta = meterChannels.find((c) => c.channel === chId);
+      return {
+        channel: chId,
+        label: meta?.label ?? "",
+        points: meterHistory.get(chId) ?? [],
+        color: TIMESERIES_PALETTE[i % TIMESERIES_PALETTE.length],
+      };
+    });
+  });
 
   function acknowledgeRecommendations(): void {
     lastAckedAt = Date.now();
@@ -614,16 +652,24 @@
       <p class="hint">미터 스트림이 시작되면 채널을 선택할 수 있습니다.</p>
     {:else}
       <div class="ts-controls">
-        <select
-          class="ts-select"
-          bind:value={selectedTimeseriesChannel}
-        >
+        <div class="ts-channel-chips" role="group" aria-label="비교 채널 선택">
           {#each meterChannels as ch (ch.channel)}
-            <option value={ch.channel}>
-              ch{String(ch.channel).padStart(2, "0")} — {ch.label || ch.category}
-            </option>
+            {@const idx = selectedTimeseriesChannels.indexOf(ch.channel)}
+            {@const selected = idx >= 0}
+            <button
+              class="ts-chip"
+              class:selected
+              style={selected
+                ? `--chip-color: ${TIMESERIES_PALETTE[idx % TIMESERIES_PALETTE.length]}`
+                : ""}
+              onclick={() => toggleTimeseriesChannel(ch.channel)}
+              title="ch{String(ch.channel).padStart(2, '0')} 토글"
+            >
+              ch{String(ch.channel).padStart(2, "0")}
+              {#if ch.label}<span class="ts-chip-label">{ch.label}</span>{/if}
+            </button>
           {/each}
-        </select>
+        </div>
         <div class="filter-group" role="group" aria-label="윈도우">
           {#each [30, 60, 120] as sec (sec)}
             <button
@@ -634,15 +680,13 @@
           {/each}
         </div>
       </div>
-      {#if selectedTimeseriesChannel !== null}
-        {@const sel = meterChannels.find((c) => c.channel === selectedTimeseriesChannel)}
-        <Timeseries
-          channel={selectedTimeseriesChannel}
-          label={sel?.label ?? ""}
-          points={meterHistory.get(selectedTimeseriesChannel) ?? []}
-          windowSeconds={timeseriesWindowSec}
-        />
-      {/if}
+      <p class="hint ts-hint">
+        최대 {MAX_COMPARE_CHANNELS}채널 동시 비교. 한도 초과 시 가장 먼저 선택한 채널이 자동 해제.
+      </p>
+      <Timeseries
+        series={timeseriesSeries}
+        windowSeconds={timeseriesWindowSec}
+      />
     {/if}
   </section>
 
@@ -960,19 +1004,45 @@
     margin-bottom: 0.75rem;
     flex-wrap: wrap;
   }
-  .ts-select {
+  .ts-channel-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    flex: 1;
+    min-width: 0;
+  }
+  .ts-chip {
     background: #1a1d24;
-    color: #c8cdd6;
+    color: #8b95a3;
     border: 1px solid #2a2f39;
     border-radius: 0.25rem;
-    padding: 0.3rem 0.55rem;
-    font-size: 0.85rem;
-    font-family: inherit;
-    min-width: 14rem;
+    padding: 0.25rem 0.55rem;
+    font-size: 0.8rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s, border-color 0.1s;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.35rem;
   }
-  .ts-select:focus {
-    outline: none;
-    border-color: #2a4a73;
+  .ts-chip:hover:not(.selected) {
+    background: #232730;
+    color: #c8cdd6;
+  }
+  .ts-chip.selected {
+    background: color-mix(in srgb, var(--chip-color) 16%, #1a1d24);
+    color: var(--chip-color);
+    border-color: var(--chip-color);
+  }
+  .ts-chip-label {
+    color: inherit;
+    opacity: 0.7;
+    font-family: inherit;
+    font-size: 0.72rem;
+  }
+  .ts-hint {
+    margin: -0.3rem 0 0.75rem;
+    font-size: 0.78rem;
   }
 
   /* 룰 토글 카드 */
