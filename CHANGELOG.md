@@ -26,6 +26,15 @@ MixPilot의 모든 주목할 만한 변경 사항을 기록합니다.
 
 ### Added (Unreleased, continued)
 
+- **service wav 회귀 러너** (`mixpilot.scripts.run_service_replay`) — 운영자가
+  녹음한 service wav를 입력으로 추천 패턴을 회귀 자산화. WavReplayAudioSource +
+  `_processing_loop` 직접 호출. case yaml에 `wav_path`·`rules_enabled`·
+  `expected{min/max_recommendation_count, kinds_present, kinds_absent}` 정의.
+  - `evals/fixtures/README.md` + `evals/service-cases/README.md` 운영자 가이드.
+  - 첫 케이스 `synthetic-multich-baseline.yaml` (러너 동작 검증).
+  - 단위 테스트 6건 (minimal/상대경로/expected 위반/missing wav).
+  - `docs/operator-guide.md` 4-1 절에 사용법 추가.
+
 - **service별 audit log 자동 분리** — `MIXPILOT_AUDIT_LOG_PATH=./logs/audit-%Y%m%d.jsonl`
   처럼 strftime 패턴을 적으면 서버 가동 시점에 자동 expand + 부모 디렉토리
   mkdir. 운영자가 매번 환경 변수 손볼 필요 없음.
