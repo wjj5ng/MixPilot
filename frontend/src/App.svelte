@@ -6,7 +6,9 @@
     fetchChannelMap,
     fetchHealth,
     fetchRecentActions,
+    fetchRules,
     forceDryRun,
+    setRuleEnabled,
     subscribeMeters,
     subscribeRecommendations,
     updateChannel,
@@ -16,6 +18,7 @@
     type ChannelMeter,
     type HealthResponse,
     type RecommendationPayload,
+    type RuleState,
   } from "./lib/api";
 
   let health = $state<HealthResponse | null>(null);
@@ -31,6 +34,9 @@
   let auditEnabled = $state<boolean | null>(null);
   let channelMap = $state<ChannelMapEntry[]>([]);
   let channelMapError = $state<string | null>(null);
+  let rules = $state<RuleState[]>([]);
+  let rulesError = $state<string | null>(null);
+  let rulesBusy = $state<Set<string>>(new Set());
 
   const MAX_VISIBLE_RECS = 50;
   const RECENT_ACTIONS_POLL_MS = 5_000;
@@ -69,6 +75,45 @@
     } catch (e) {
       channelMapError = String(e);
     }
+  }
+
+  async function refreshRules(): Promise<void> {
+    try {
+      const data = await fetchRules();
+      rules = data.rules;
+      rulesError = null;
+    } catch (e) {
+      rulesError = String(e);
+    }
+  }
+
+  async function toggleRule(rule: RuleState): Promise<void> {
+    if (rulesBusy.has(rule.name)) return;
+    rulesBusy = new Set([...rulesBusy, rule.name]);
+    try {
+      const updated = await setRuleEnabled(rule.name, !rule.enabled);
+      rules = rules.map((r) => (r.name === updated.name ? updated : r));
+      rulesError = null;
+    } catch (e) {
+      rulesError = String(e);
+    } finally {
+      const next = new Set(rulesBusy);
+      next.delete(rule.name);
+      rulesBusy = next;
+    }
+  }
+
+  function ruleLabel(name: string): string {
+    return (
+      {
+        loudness: "RMS 라우드니스",
+        lufs: "LUFS",
+        peak: "Peak / True Peak",
+        feedback: "하울링 감지",
+        dynamic_range: "Dynamic Range",
+        lra: "LRA",
+      }[name] ?? name
+    );
   }
 
   function categoryLabel(cat: string): string {
@@ -146,6 +191,7 @@
     auditLogTimer = setInterval(refreshAuditLog, AUDIT_LOG_POLL_MS);
 
     await refreshChannelMap();
+    await refreshRules();
 
     unsubscribe = subscribeRecommendations(
       (rec) => {
@@ -299,6 +345,34 @@
       </dl>
     {:else}
       <p>로딩 중…</p>
+    {/if}
+  </section>
+
+  <section class="card">
+    <h2>
+      룰 토글
+      <span class="hint-inline">— service 도중 즉시 켜고 끔(재시작 불필요)</span>
+    </h2>
+    {#if rulesError}
+      <p class="error">오류: {rulesError}</p>
+    {/if}
+    {#if rules.length === 0}
+      <p class="hint">로딩 중…</p>
+    {:else}
+      <div class="rule-toggles">
+        {#each rules as rule (rule.name)}
+          <label class="rule-row" class:active={rule.enabled}>
+            <input
+              type="checkbox"
+              checked={rule.enabled}
+              disabled={rulesBusy.has(rule.name)}
+              onchange={() => toggleRule(rule)}
+            />
+            <span class="rule-name">{ruleLabel(rule.name)}</span>
+            <span class="rule-state">{rule.enabled ? "활성" : "비활성"}</span>
+          </label>
+        {/each}
+      </div>
     {/if}
   </section>
 
@@ -631,6 +705,53 @@
   .stream-status.connected {
     background: #1e3a2e;
     color: #6fcf97;
+  }
+
+  /* 룰 토글 카드 */
+  .rule-toggles {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+    gap: 0.4rem;
+  }
+  .rule-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.7rem;
+    background: #1f232b;
+    border: 1px solid #2a2f39;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.1s;
+    font-size: 0.85rem;
+  }
+  .rule-row:hover {
+    background: #232730;
+  }
+  .rule-row.active {
+    border-color: #2a4a73;
+    background: #1e2a3a;
+  }
+  .rule-row input[type="checkbox"] {
+    margin: 0;
+    accent-color: #6c8cff;
+    cursor: pointer;
+  }
+  .rule-row input[type="checkbox"]:disabled {
+    opacity: 0.5;
+    cursor: wait;
+  }
+  .rule-name {
+    flex: 1;
+    color: #c8cdd6;
+  }
+  .rule-state {
+    color: #5a6270;
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .rule-row.active .rule-state {
+    color: #aac4ff;
   }
 
   /* 채널 매핑 카드 */

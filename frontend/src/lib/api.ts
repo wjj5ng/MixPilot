@@ -21,6 +21,8 @@ export type AuditEntry = components["schemas"]["AuditEntry"];
 export type AuditLogResponse = components["schemas"]["AuditLogResponse"];
 export type ChannelMapEntry = components["schemas"]["ChannelMapEntry"];
 export type ChannelMapResponse = components["schemas"]["ChannelMapResponse"];
+export type RuleState = components["schemas"]["RuleState"];
+export type RulesResponse = components["schemas"]["RulesResponse"];
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -50,6 +52,34 @@ export async function fetchRecentActions(): Promise<RecentActionsResponse> {
     throw new Error(`/control/recent-actions failed: ${response.status}`);
   }
   return (await response.json()) as RecentActionsResponse;
+}
+
+/** 룰 토글 상태 — service 도중 운영자가 즉시 켜고 끔. */
+export async function fetchRules(): Promise<RulesResponse> {
+  const response = await fetch(`${API_BASE_URL}/control/rules`);
+  if (!response.ok) {
+    throw new Error(`/control/rules failed: ${response.status}`);
+  }
+  return (await response.json()) as RulesResponse;
+}
+
+/** 단일 룰 켜기/끄기 — 다음 frame부터 즉시 반영. */
+export async function setRuleEnabled(
+  rule: string,
+  enabled: boolean,
+): Promise<RuleState> {
+  const response = await fetch(`${API_BASE_URL}/control/rules/${rule}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(
+      `/control/rules/${rule} failed: ${response.status} ${detail}`,
+    );
+  }
+  return (await response.json()) as RuleState;
 }
 
 /** 현재 채널맵 — config/channels.yaml의 현재 내용. */

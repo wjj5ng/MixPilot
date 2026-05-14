@@ -110,6 +110,25 @@ class ChannelMapUpdateRequest(BaseModel):
     label: str = ""
 
 
+class RuleState(BaseModel):
+    """단일 룰의 활성 상태."""
+
+    name: str
+    enabled: bool
+
+
+class RulesResponse(BaseModel):
+    """`GET /control/rules` 응답 — 모든 룰의 현재 토글 상태."""
+
+    rules: list[RuleState]
+
+
+class RuleToggleRequest(BaseModel):
+    """`PUT /control/rules/{name}` 요청 body."""
+
+    enabled: bool
+
+
 class ChannelMeter(BaseModel):
     """단일 채널 미터 — 라벨·카테고리·RMS·peak·LRA·옥타브 스펙트럼."""
 

@@ -266,6 +266,59 @@ class TestChannelMapEndpoint:
         assert entries[0]["channel"] == 7
 
 
+class TestRulesEndpoint:
+    """GET /control/rules + PUT /control/rules/{name}."""
+
+    def test_lists_all_rules(self, client: TestClient) -> None:
+        body = client.get("/control/rules").json()
+        names = {r["name"] for r in body["rules"]}
+        assert names == {
+            "loudness",
+            "lufs",
+            "peak",
+            "feedback",
+            "dynamic_range",
+            "lra",
+        }
+
+    def test_default_state_reflects_config(self, client: TestClient) -> None:
+        # 디폴트 Settings에서 loudness만 True, 나머지 모두 False.
+        body = client.get("/control/rules").json()
+        states = {r["name"]: r["enabled"] for r in body["rules"]}
+        assert states["loudness"] is True
+        for name in ("lufs", "peak", "feedback", "dynamic_range", "lra"):
+            assert states[name] is False
+
+    def test_put_toggles_rule(self, client: TestClient) -> None:
+        response = client.put("/control/rules/peak", json={"enabled": True})
+        assert response.status_code == 200
+        assert response.json() == {"name": "peak", "enabled": True}
+        # GET이 새 상태 반영.
+        states = {
+            r["name"]: r["enabled"]
+            for r in client.get("/control/rules").json()["rules"]
+        }
+        assert states["peak"] is True
+
+    def test_put_rejects_unknown_rule(self, client: TestClient) -> None:
+        response = client.put("/control/rules/madeup", json={"enabled": True})
+        assert response.status_code == 400
+        assert "unknown rule" in response.json()["detail"]
+
+    def test_put_persists_across_requests(self, client: TestClient) -> None:
+        # 같은 app 인스턴스에서 mutation이 보존되는지 검증.
+        client.put("/control/rules/lufs", json={"enabled": True})
+        client.put("/control/rules/peak", json={"enabled": True})
+        client.put("/control/rules/loudness", json={"enabled": False})
+        states = {
+            r["name"]: r["enabled"]
+            for r in client.get("/control/rules").json()["rules"]
+        }
+        assert states["lufs"] is True
+        assert states["peak"] is True
+        assert states["loudness"] is False
+
+
 class TestAuditLogEndpoint:
     """ADR-0008 §3 — GET /control/audit-log/recent."""
 

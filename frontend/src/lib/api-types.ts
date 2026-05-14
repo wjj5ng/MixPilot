@@ -101,6 +101,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/control/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Rules
+         * @description 모든 룰의 현재 토글 상태 — service 도중 운영자 가시용.
+         */
+        get: operations["get_rules_control_rules_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/control/rules/{rule_name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Rule
+         * @description 단일 룰 토글 — 처리 루프는 다음 frame부터 반영(재시작 불필요).
+         *
+         *     Raises:
+         *         HTTP 400: 알 수 없는 룰 이름.
+         */
+        put: operations["update_rule_control_rules__rule_name__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/control/audit-log/recent": {
         parameters: {
             query?: never;
@@ -417,6 +460,32 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /**
+         * RuleState
+         * @description 단일 룰의 활성 상태.
+         */
+        RuleState: {
+            /** Name */
+            name: string;
+            /** Enabled */
+            enabled: boolean;
+        };
+        /**
+         * RuleToggleRequest
+         * @description `PUT /control/rules/{name}` 요청 body.
+         */
+        RuleToggleRequest: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /**
+         * RulesResponse
+         * @description `GET /control/rules` 응답 — 모든 룰의 현재 토글 상태.
+         */
+        RulesResponse: {
+            /** Rules */
+            rules: components["schemas"]["RuleState"][];
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -521,6 +590,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChannelMapEntry"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_rules_control_rules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RulesResponse"];
+                };
+            };
+        };
+    };
+    update_rule_control_rules__rule_name__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuleToggleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleState"];
                 };
             };
             /** @description Validation Error */
