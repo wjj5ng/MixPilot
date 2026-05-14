@@ -1,0 +1,63 @@
+# Phase correlation 기준 회귀 케이스.
+#
+# 알고리즘: r = sum(L*R) / sqrt(sum(L²) * sum(R²)). DC 제거 안 함.
+# 범위 [-1, +1]. 라이브 환경에서 r < 0은 모노 다운믹스 캔슬 위험 신호.
+
+id: phase-baseline
+description: Phase correlation의 결정적 회귀 — 동상·역상·무상관·무음.
+function_under_test: mixpilot.dsp.phase.phase_correlation_pair
+
+cases:
+  - id: phase-in-phase
+    input:
+      kind: stereo_sine
+      sample_rate: 48000
+      frequency_hz: 1000
+      amplitude: 0.5
+      left_phase_shift: 0.0
+      duration_seconds: 0.1
+      left_index: 0
+      right_index: 1
+    expected:
+      value: 1.0
+      tolerance_abs: 1.0e-9
+
+  - id: phase-anti-phase
+    input:
+      kind: stereo_sine
+      sample_rate: 48000
+      frequency_hz: 1000
+      amplitude: 0.5
+      left_phase_shift: 3.141592653589793  # π
+      duration_seconds: 0.1
+      left_index: 0
+      right_index: 1
+    expected:
+      value: -1.0
+      tolerance_abs: 1.0e-9
+
+  - id: phase-quadrature
+    input:
+      kind: stereo_sine
+      sample_rate: 48000
+      frequency_hz: 1000
+      amplitude: 0.5
+      left_phase_shift: 1.5707963267948966  # π/2
+      duration_seconds: 1.0
+      left_index: 0
+      right_index: 1
+    expected:
+      # 90도 위상차 → 직교 → 0에 매우 가까움.
+      value_range: [-0.05, 0.05]
+
+  - id: phase-silence-both
+    input:
+      kind: stereo_silence
+      sample_rate: 48000
+      num_samples: 1024
+      left_index: 0
+      right_index: 1
+    expected:
+      # 양쪽 무음 → UNDEFINED_PHASE = 0.
+      value: 0.0
+      tolerance_abs: 0.0

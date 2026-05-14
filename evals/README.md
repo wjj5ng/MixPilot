@@ -155,6 +155,7 @@ cases:
 | `feedback-baseline.yaml` | `detect_peak_bins` | 7/7 (5 cases × 다중 어설션) |
 | `dynamic-range-baseline.yaml` | `dynamic_range_db` | 5/5 |
 | `lra-baseline.yaml` | `lra` | 5/5 (raises 케이스 2개 포함) |
+| `phase-baseline.yaml` | `phase_correlation_pair` | 4/4 (in/anti-phase·quadrature·silence) |
 
 ## DSP 정확도 임계 기준
 

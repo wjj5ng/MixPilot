@@ -41,6 +41,7 @@ from mixpilot.dsp.feedback import FeedbackPeak, detect_peak_bins
 from mixpilot.dsp.lra import lra
 from mixpilot.dsp.lufs import lufs_integrated
 from mixpilot.dsp.peak import peak, true_peak
+from mixpilot.dsp.phase import phase_correlation_pair
 from mixpilot.dsp.rms import rms
 
 
@@ -112,6 +113,26 @@ def _generate_impulse(params: Mapping[str, Any]) -> np.ndarray:
     return signal
 
 
+def _generate_stereo_sine(params: Mapping[str, Any]) -> np.ndarray:
+    """동일 주파수의 두 사인을 stereo 페어로 — left_phase_shift만큼 R 위상 차.
+
+    Returns: shape (frames, 2) — ch0=left, ch1=right.
+    """
+    sr = int(params["sample_rate"])
+    freq = float(params["frequency_hz"])
+    amp = float(params["amplitude"])
+    shift = float(params.get("left_phase_shift", 0.0))
+    n = _length_from_params(params)
+    t = np.arange(n) / sr
+    left = (amp * np.sin(2 * np.pi * freq * t)).astype(np.float64)
+    right = (amp * np.sin(2 * np.pi * freq * t + shift)).astype(np.float64)
+    return np.stack([left, right], axis=1)
+
+
+def _generate_stereo_silence(params: Mapping[str, Any]) -> np.ndarray:
+    return np.zeros((_length_from_params(params), 2), dtype=np.float64)
+
+
 _SIGNAL_GENERATORS: dict[str, Callable[[Mapping[str, Any]], np.ndarray]] = {
     "sine": _generate_sine,
     "sum_of_sines": _generate_sum_of_sines,
@@ -119,6 +140,8 @@ _SIGNAL_GENERATORS: dict[str, Callable[[Mapping[str, Any]], np.ndarray]] = {
     "silence": _generate_silence,
     "impulse": _generate_impulse,
     "white_noise": _generate_white_noise,
+    "stereo_sine": _generate_stereo_sine,
+    "stereo_silence": _generate_stereo_silence,
 }
 
 
@@ -134,6 +157,13 @@ _DSP_DISPATCH: dict[str, Callable[[np.ndarray, Mapping[str, Any]], float]] = {
     ),
     "mixpilot.dsp.lra.lra": lambda samples, input_spec: lra(
         samples, int(input_spec["sample_rate"])
+    ),
+    "mixpilot.dsp.phase.phase_correlation_pair": lambda samples, input_spec: (
+        phase_correlation_pair(
+            samples,
+            int(input_spec.get("left_index", 0)),
+            int(input_spec.get("right_index", 1)),
+        )
     ),
 }
 

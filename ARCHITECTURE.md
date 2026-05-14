@@ -33,7 +33,7 @@ MixPilot의 모듈 경계·의존성 방향·외부 시스템 어댑터 규칙. 
 | 모듈 | 책임 | 의존 허용 | 의존 금지 |
 |---|---|---|---|
 | `domain/` | 도메인 모델: `Signal`, `Channel`, `Source`, `Recommendation`, `AudioFormat`, 포트(Protocol) 정의. 순수 데이터·불변 타입 우선. | `numpy`(타입), 표준 라이브러리 | 그 외 모든 외부 라이브러리, 모든 형제 모듈 |
-| `dsp/` | DSP 분석: FFT, LUFS, LRA, Peak/True Peak, RMS, Dynamic Range, Feedback Detection. 순수 함수 `(ndarray, params) → metrics`. | `numpy`, `scipy`, `pyloudnorm`, `domain/`(타입) | `api/`, `infra/`, `rules/`, 모든 부수효과 |
+| `dsp/` | DSP 분석: FFT, LUFS, LRA, Peak/True Peak, RMS, Dynamic Range, Feedback Detection, Phase Correlation. 순수 함수 `(ndarray, params) → metrics`. | `numpy`, `scipy`, `pyloudnorm`, `domain/`(타입) | `api/`, `infra/`, `rules/`, 모든 부수효과 |
 | `rules/` | 규칙 기반 추천 엔진. 분석 결과 → 추천 액션 매핑. 결정성 보장. | `domain/`, `dsp/`, 표준 라이브러리 | `api/`, `infra/`, 외부 I/O, 시간·랜덤 |
 | `api/` | FastAPI 라우터, 요청·응답 스키마, WebSocket 핸들러. | `fastapi`, `pydantic`, `domain/`, `rules/`, `infra/`(추상 포트 통해) | `dsp/` 직접 호출 (→ `rules/` 통해서), 도메인 로직 직접 구현 |
 | `infra/` | 외부 I/O 어댑터 — 오디오 캡처·결과 저장·메트릭·외부 알림. `domain/`의 포트를 *구현*. | `domain/`(포트), 외부 라이브러리(`sounddevice`, `pyaudio`, HTTP 클라이언트 등) | `api/`, `rules/`, `dsp/`, 도메인 로직 |
