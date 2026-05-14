@@ -103,6 +103,26 @@
       }[kind] ?? kind
     );
   }
+
+  // 종류별 필터 — null이면 모두 표시.
+  type KindFilter = null | "alerts" | "info";
+  let kindFilter = $state<KindFilter>(null);
+
+  const visibleRecommendations = $derived.by(() => {
+    if (kindFilter === null) return recommendations;
+    if (kindFilter === "alerts") {
+      // 정보(info) 제외 — 액션·하울링만.
+      return recommendations.filter((r) => r.kind !== "info");
+    }
+    if (kindFilter === "info") {
+      return recommendations.filter((r) => r.kind === "info");
+    }
+    return recommendations;
+  });
+
+  function clearRecommendations(): void {
+    recommendations = [];
+  }
 </script>
 
 <main>
@@ -194,14 +214,40 @@
         {streamConnected ? "수신 중" : "대기"}
       </span>
     </h2>
+    <div class="rec-controls">
+      <div class="filter-group" role="group" aria-label="추천 필터">
+        <button
+          class="filter-btn"
+          class:active={kindFilter === null}
+          onclick={() => (kindFilter = null)}
+        >전체 ({recommendations.length})</button>
+        <button
+          class="filter-btn"
+          class:active={kindFilter === "alerts"}
+          onclick={() => (kindFilter = "alerts")}
+        >경고만</button>
+        <button
+          class="filter-btn"
+          class:active={kindFilter === "info"}
+          onclick={() => (kindFilter = "info")}
+        >정보만</button>
+      </div>
+      <button
+        class="clear-btn"
+        disabled={recommendations.length === 0}
+        onclick={clearRecommendations}
+      >비우기</button>
+    </div>
     {#if recommendations.length === 0}
       <p class="hint">
         아직 추천 없음. <code>MIXPILOT_AUDIO__ENABLED=true</code>로 캡처를 켜야
         분석이 시작됩니다.
       </p>
+    {:else if visibleRecommendations.length === 0}
+      <p class="hint">현재 필터에 일치하는 추천이 없습니다.</p>
     {:else}
       <ul class="rec-list">
-        {#each recommendations as rec, i (i)}
+        {#each visibleRecommendations as rec, i (i)}
           <li class="rec rec--{rec.kind}">
             <div class="rec-head">
               <span class="rec-channel">ch{String(rec.channel).padStart(2, "0")}</span>
@@ -285,6 +331,55 @@
   .stream-status.connected {
     background: #1e3a2e;
     color: #6fcf97;
+  }
+
+  .rec-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+  .filter-group {
+    display: flex;
+    gap: 0.25rem;
+  }
+  .filter-btn {
+    background: #232730;
+    color: #8b95a3;
+    border: 1px solid #2a2f39;
+    padding: 0.3rem 0.65rem;
+    border-radius: 0.25rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+  }
+  .filter-btn:hover:not(.active) {
+    background: #2a2f39;
+    color: #c8cdd6;
+  }
+  .filter-btn.active {
+    background: #1e3a5f;
+    color: #aac4ff;
+    border-color: #2a4a73;
+  }
+  .clear-btn {
+    background: transparent;
+    color: #8b95a3;
+    border: 1px solid #2a2f39;
+    padding: 0.3rem 0.65rem;
+    border-radius: 0.25rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+  }
+  .clear-btn:hover:not(:disabled) {
+    background: #2a2f39;
+    color: #c8cdd6;
+  }
+  .clear-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 
   .rec-list {
