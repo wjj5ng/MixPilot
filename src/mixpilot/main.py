@@ -218,12 +218,15 @@ def _compute_meter_payload(
 
 def _split_signal_to_channels(
     signal: Signal,
-    sources_by_id: dict[int, Source],
+    channel_map: YamlChannelMetadata,
 ) -> list[Channel]:
     """다채널 Signal → 채널별 `Channel` 분리.
 
     1-based 채널 번호(M32 컨벤션). 매핑되지 않은 채널은 UNKNOWN 카테고리로
     Source를 생성한다.
+
+    `channel_map.get_source_sync()`를 매 frame 호출하므로 PUT /channels로 갱신된
+    매핑이 *다음 frame부터 즉시 반영*된다 (재시작 불필요).
     """
     samples = signal.samples
     if samples.ndim == 1:
@@ -233,7 +236,7 @@ def _split_signal_to_channels(
     channels: list[Channel] = []
     for idx in range(num_channels):
         ch_id = idx + 1
-        source = sources_by_id.get(ch_id) or Source(
+        source = channel_map.get_source_sync(ch_id) or Source(
             channel=ChannelId(ch_id),
             category=SourceCategory.UNKNOWN,
         )
@@ -296,7 +299,7 @@ async def _processing_loop(
     audio: SoundDeviceAudioSource | SyntheticAudioSource | WavReplayAudioSource,
     controller: M32OscController,
     broker: RecommendationBroker,
-    sources_by_id: dict[int, Source],
+    channel_map: YamlChannelMetadata,
     rms_targets: dict[str, float],
     rule_toggles: RuleToggles,
     *,
@@ -338,7 +341,7 @@ async def _processing_loop(
             frame_count += 1
             # 토글 상태를 frame 단위로 캐시 — 같은 frame 내 일관성 보장.
             tg = rule_toggles.snapshot()
-            channels = _split_signal_to_channels(signal, sources_by_id)
+            channels = _split_signal_to_channels(signal, channel_map)
             recommendations = (
                 evaluate_all_channels(channels, rms_targets) if tg["loudness"] else []
             )
@@ -356,9 +359,7 @@ async def _processing_loop(
                     format=signal.format,
                     capture_seq=signal.capture_seq,
                 )
-                lufs_channels = _split_signal_to_channels(
-                    buffered_signal, sources_by_id
-                )
+                lufs_channels = _split_signal_to_channels(buffered_signal, channel_map)
                 recommendations.extend(
                     evaluate_all_channels_lufs(lufs_channels, lufs_targets)
                 )
@@ -446,7 +447,7 @@ async def _processing_loop(
                     format=signal.format,
                     capture_seq=signal.capture_seq,
                 )
-                lra_channels = _split_signal_to_channels(buffered_signal, sources_by_id)
+                lra_channels = _split_signal_to_channels(buffered_signal, channel_map)
                 # LRA를 한 번만 계산 — meter 캐시·룰 평가 모두 같은 값 사용.
                 for lra_ch in lra_channels:
                     try:
@@ -539,8 +540,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     action_history=action_history,
                 )
                 app.state.controller = controller
-                sources = list(await channel_map.get_all_channels())
-                sources_by_id = {int(s.channel): s for s in sources}
+                # channel_map은 외부에서 1회 생성되어 app.state에 있음. 처리 루프는
+                # 매 frame `get_source_sync()`로 직접 조회 — PUT /channels로 갱신된
+                # 매핑을 다음 frame부터 즉시 반영.
                 rms_targets = _build_rms_dbfs_targets(cfg)
 
                 # 버퍼·detector는 *항상* 생성 — 토글 OFF여도 누적은 진행되어
@@ -585,7 +587,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         audio,
                         controller,
                         broker,
-                        sources_by_id,
+                        channel_map,
                         rms_targets,
                         rule_toggles,
                         lufs_buffer=lufs_buffer,

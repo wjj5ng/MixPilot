@@ -17,11 +17,16 @@ MixPilot의 모든 주목할 만한 변경 사항을 기록합니다.
   - 룰 토글에 phase 항목 자동 포함.
   - PhaseAnalysisConfig — enabled / warn_threshold.
 
+### Changed (Unreleased)
+
+- **채널맵 PUT의 라이브 처리 루프 즉시 반영** — 운영자가 service 도중 매핑
+  편집 시 재시작 없이 다음 frame부터 새 매핑이 적용된다. 처리 루프가 사전
+  스냅샷 dict 대신 `channel_map.get_source_sync()`를 매 frame 호출하도록 변경.
+  UI 안내 문구도 "재시작 후 반영" → "다음 frame부터 즉시 반영"으로 갱신.
+
 ### 향후 후보
 
-- service 도중 룰 on/off 토글 (per-rule UI 컨트롤) — 0.1.0에 포함됨, 이 항목 제거.
 - 프로덕션 배포 아티팩트 (Dockerfile + systemd unit)
-- 채널맵 UI 편집 변경의 라이브 처리 루프 즉시 반영
 - ITU-R BS.1770-4 conformance signals로 LUFS·LRA 정확값 검증
 
 ---

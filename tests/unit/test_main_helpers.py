@@ -95,6 +95,20 @@ class TestRecommendationBroker:
         assert queue.qsize() == 1
 
 
+class _FakeChannelMap:
+    """`_split_signal_to_channels`이 요구하는 인터페이스만 제공하는 minimal stub.
+
+    실제 YamlChannelMetadata 대신 사용 — get_source_sync(ch_id) → Source | None.
+    sources dict는 mutable이라 테스트가 in-place 갱신 가능 → 라이브 반영 시뮬레이션.
+    """
+
+    def __init__(self, sources: dict[int, Source]) -> None:
+        self.sources = sources
+
+    def get_source_sync(self, ch_id: int) -> Source | None:
+        return self.sources.get(int(ch_id))
+
+
 class TestSplitSignalToChannels:
     def _format(self, channels: int = 4) -> AudioFormat:
         return AudioFormat(
@@ -109,7 +123,7 @@ class TestSplitSignalToChannels:
 
     def test_2d_signal_splits_per_channel(self) -> None:
         sig = self._signal_2d(channels=4)
-        result = _split_signal_to_channels(sig, sources_by_id={})
+        result = _split_signal_to_channels(sig, _FakeChannelMap({}))
         assert len(result) == 4
         for idx, ch in enumerate(result):
             assert ch.samples.shape == (64,)
@@ -118,34 +132,48 @@ class TestSplitSignalToChannels:
     def test_1d_signal_becomes_single_channel(self) -> None:
         samples = np.zeros(128, dtype=np.float32)
         sig = Signal(samples=samples, format=self._format(1), capture_seq=1)
-        result = _split_signal_to_channels(sig, sources_by_id={})
+        result = _split_signal_to_channels(sig, _FakeChannelMap({}))
         assert len(result) == 1
         assert result[0].samples.shape == (128,)
 
     def test_channel_ids_are_one_based(self) -> None:
         sig = self._signal_2d(channels=3)
-        result = _split_signal_to_channels(sig, sources_by_id={})
+        result = _split_signal_to_channels(sig, _FakeChannelMap({}))
         assert [int(ch.source.channel) for ch in result] == [1, 2, 3]
 
     def test_unmapped_channels_get_unknown_category(self) -> None:
         sig = self._signal_2d(channels=2)
-        result = _split_signal_to_channels(sig, sources_by_id={})
+        result = _split_signal_to_channels(sig, _FakeChannelMap({}))
         for ch in result:
             assert ch.source.category is SourceCategory.UNKNOWN
 
     def test_mapped_channels_use_provided_source(self) -> None:
         sig = self._signal_2d(channels=2)
         mapped = Source(ChannelId(1), SourceCategory.PREACHER, "설교자")
-        result = _split_signal_to_channels(sig, sources_by_id={1: mapped})
+        result = _split_signal_to_channels(sig, _FakeChannelMap({1: mapped}))
         assert result[0].source is mapped
         assert result[1].source.category is SourceCategory.UNKNOWN
 
     def test_preserves_capture_seq_and_format(self) -> None:
         sig = self._signal_2d(channels=2, seq=99)
-        result = _split_signal_to_channels(sig, sources_by_id={})
+        result = _split_signal_to_channels(sig, _FakeChannelMap({}))
         for ch in result:
             assert ch.capture_seq == 99
             assert ch.format == sig.format
+
+    def test_picks_up_channel_map_changes_between_calls(self) -> None:
+        # 라이브 반영 핵심 검증 — channel_map mutation이 다음 호출에 즉시 반영.
+        sig = self._signal_2d(channels=2)
+        fake = _FakeChannelMap({})
+        # 처음엔 미매핑.
+        result1 = _split_signal_to_channels(sig, fake)
+        assert result1[0].source.category is SourceCategory.UNKNOWN
+        # 새 매핑 주입.
+        fake.sources[1] = Source(ChannelId(1), SourceCategory.VOCAL, "보컬")
+        result2 = _split_signal_to_channels(sig, fake)
+        # 같은 시그널이라도 새 매핑 반영.
+        assert result2[0].source.category is SourceCategory.VOCAL
+        assert result2[0].source.label == "보컬"
 
 
 class TestSerializeRecommendation:
