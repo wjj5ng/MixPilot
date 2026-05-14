@@ -94,9 +94,7 @@ class TestDynamicRangeChannels:
         ch_silence = np.zeros(sr, dtype=np.float64)
         signal = np.stack([ch_sine, ch_dc, ch_silence], axis=1)
         out = dynamic_range_channels(signal)
-        assert out[0] == pytest.approx(
-            20.0 * math.log10(math.sqrt(2.0)), abs=1e-3
-        )
+        assert out[0] == pytest.approx(20.0 * math.log10(math.sqrt(2.0)), abs=1e-3)
         assert out[1] == pytest.approx(0.0, abs=1e-9)
         assert out[2] == 0.0
 

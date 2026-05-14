@@ -78,8 +78,7 @@ class TestPropertyOrderInvariance:
         n = 8192
         t = np.arange(n) / _SR
         sig = (
-            0.3 * np.sin(2 * np.pi * 250.0 * t)
-            + 0.3 * np.sin(2 * np.pi * 4000.0 * t)
+            0.3 * np.sin(2 * np.pi * 250.0 * t) + 0.3 * np.sin(2 * np.pi * 4000.0 * t)
         ).astype(np.float64)
         bands = octave_band_levels_dbfs(sig, _SR)
         idx_250 = OCTAVE_CENTERS_HZ.index(250.0)

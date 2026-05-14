@@ -124,9 +124,7 @@ class TestComputeMeterPayload:
         assert payload["channels"][0]["channel"] == 12
 
     def test_dbfs_values_are_finite(self) -> None:
-        channels = [
-            _ch(np.zeros(100), channel_id=i) for i in range(1, 5)
-        ]
+        channels = [_ch(np.zeros(100), channel_id=i) for i in range(1, 5)]
         payload = _compute_meter_payload(channels, capture_seq=0)
         for ch in payload["channels"]:
             assert math.isfinite(ch["rms_dbfs"])
