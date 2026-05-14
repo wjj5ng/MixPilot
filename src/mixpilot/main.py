@@ -61,6 +61,7 @@ from mixpilot.infra.audit import AuditLogger
 from mixpilot.infra.channel_map import YamlChannelMetadata
 from mixpilot.infra.m32_control import M32OscController
 from mixpilot.infra.synthetic_audio import SyntheticAudioSource
+from mixpilot.infra.wav_replay import WavReplayAudioSource
 from mixpilot.rules import (
     evaluate_all_channels,
     evaluate_all_channels_dynamic_range,
@@ -272,7 +273,7 @@ def _build_lufs_targets(settings: Settings) -> dict[str, float]:
 
 
 async def _processing_loop(
-    audio: SoundDeviceAudioSource | SyntheticAudioSource,
+    audio: SoundDeviceAudioSource | SyntheticAudioSource | WavReplayAudioSource,
     controller: M32OscController,
     broker: RecommendationBroker,
     sources_by_id: dict[int, Source],
@@ -459,7 +460,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         task: asyncio.Task[None] | None = None
-        audio: SoundDeviceAudioSource | SyntheticAudioSource | None = None
+        audio: (
+            SoundDeviceAudioSource
+            | SyntheticAudioSource
+            | WavReplayAudioSource
+            | None
+        ) = None
 
         if cfg.audio.enabled:
             try:
@@ -468,6 +474,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         cfg.audio,
                         amplitudes_dbfs=cfg.audio.synthetic_amplitudes_dbfs,
                     )
+                elif cfg.audio.source is AudioSource.WAV:
+                    audio = WavReplayAudioSource(cfg.audio)
                 else:
                     audio = SoundDeviceAudioSource(cfg.audio)
                 controller = M32OscController(

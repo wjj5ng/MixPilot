@@ -27,10 +27,13 @@ class AudioSource(StrEnum):
 
     - `sounddevice`: 실 M32 USB 캡처 (ADR-0004 기본 경로).
     - `synthetic`: 합성 사인파 — 하드웨어 없이 처리 루프를 가동·데모할 때.
+    - `wav`: WAV 파일을 실시간 cadence로 재생 — Virtual Soundcheck(ADR-0006)
+      또는 회귀 검증용. `AudioConfig.replay_path` 필요.
     """
 
     SOUNDDEVICE = "sounddevice"
     SYNTHETIC = "synthetic"
+    WAV = "wav"
 
 
 class OperatingMode(StrEnum):
@@ -64,6 +67,12 @@ class AudioConfig(BaseModel):
     synthetic_amplitudes_dbfs: Sequence[float] | None = None
     """`source=synthetic` 일 때 채널별 사인파 amplitude (dBFS).
     None이면 채널 1=-30 dBFS, 채널 N=-3 dBFS의 선형 step. 길이는 `num_channels`."""
+
+    replay_path: Path | None = None
+    """`source=wav` 일 때 재생할 WAV 파일 경로. None이면 시작 시 에러."""
+
+    replay_loop: bool = True
+    """WAV 끝까지 가면 처음부터 다시 재생할지. False면 자연 stop."""
 
 
 class M32Config(BaseModel):

@@ -39,3 +39,7 @@ htmlcov/
 # Eval results (per-run outputs)
 evals/results/*
 !evals/results/.gitkeep
+
+# WAV fixtures — generator(generate_test_wavs.py)로 재생성하는 산출물.
+# 큰 라이브 녹음은 git-lfs 또는 외부 스토리지 분리(AGENTS.md).
+evals/fixtures/*.wav
