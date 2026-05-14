@@ -228,6 +228,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/control/reload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reload Thresholds
+         * @description graceful 임계·타깃 reload — service 중 환경 변수 갱신 후 호출.
+         *
+         *     새 `Settings()`를 생성해 `.env`와 현재 환경 변수를 재평가하고,
+         *     라이브 갱신 가능한 임계·타깃만 in-place mutate. 처리 루프는 다음
+         *     frame부터 새 값으로 평가 — 재시작 불필요.
+         *
+         *     라이브 변경 불가 영역(audio·LUFS/LRA buffer 크기·detector persistence·
+         *     OSC host 등)은 `ignored`로 보고. 그쪽을 바꾸려면 명시적 재시작 필요.
+         *
+         *     주의: `feedback_pnr_threshold_db`는 평가 시 확인 임계로는 즉시
+         *     반영되나, 채널별 `FeedbackDetector`가 갖는 검출 임계는 객체 재생성
+         *     없이 갱신되지 않는다(detector는 ignored에 포함).
+         */
+        post: operations["reload_thresholds_control_reload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/recommendations": {
         parameters: {
             query?: never;
@@ -443,6 +474,8 @@ export interface components {
             phase_analysis_enabled: boolean;
             /** Meter Stream Enabled */
             meter_stream_enabled: boolean;
+            /** Metrics Sink Enabled */
+            metrics_sink_enabled: boolean;
         };
         /**
          * MeterSnapshotEvent
@@ -519,6 +552,28 @@ export interface components {
             confidence: number;
             /** Reason */
             reason: string;
+        };
+        /**
+         * ReloadResponse
+         * @description `POST /control/reload` 응답 — graceful 임계 reload 결과 리포트.
+         *
+         *     `applied_thresholds`: 새 settings로부터 갱신된 임계·타깃 dict.
+         *     `ignored`: 라이브 변경 불가 영역(audio·buffer·detector persistence 등) —
+         *     값이 바뀌었더라도 재시작 전까지 반영 안 됨. 운영자가 명시적으로 인지하도록
+         *     각 항목에 사유 첨부.
+         */
+        ReloadResponse: {
+            /** Applied Thresholds */
+            applied_thresholds: {
+                [key: string]: unknown;
+            };
+            /**
+             * Ignored
+             * @default []
+             */
+            ignored: {
+                [key: string]: string;
+            }[];
         };
         /**
          * RuleState
@@ -818,6 +873,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reload_thresholds_control_reload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReloadResponse"];
                 };
             };
         };

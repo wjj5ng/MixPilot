@@ -206,7 +206,30 @@ uv run python -m mixpilot.scripts.run_service_replay \
 
 ---
 
-## 7. 비상 시
+## 7. 임계 graceful reload (service 도중 환경 변수 갱신)
+
+`.env`를 service 도중 손대거나 `MIXPILOT_*` 변수를 export로 바꾼 뒤 상태 카드의
+**🔄 임계 reload** 버튼을 누르면 *재시작 없이* 새 임계가 적용됩니다.
+
+**라이브 갱신 가능**(이 버튼으로 반영):
+- 카테고리별 LUFS·RMS dBFS 타깃
+- Peak·DR·LRA·Phase 임계 + persistence
+- Feedback PNR 임계(평가 단)
+
+**재시작 필요**(버튼이 보고만 함):
+- audio source / sample rate / 채널 수
+- LUFS·LRA buffer 길이
+- Feedback detector persistence·주파수 범위(채널별 detector 재생성)
+- M32 OSC host/port
+- audit_log_path, metrics_sink, 미터 publish 간격
+
+응답에 `재시작 필요 N건` 표시가 뜨면 *어떤 항목이 무시되었는지* 응답 JSON
+(`ignored` 배열)에서 사후 확인 가능. 운영 중에는 우선 reload 버튼만 누르고,
+service 종료 후 재시작이 필요한 변경은 다음 가동 때 적용.
+
+---
+
+## 8. 비상 시
 
 - **하울링 폭주**: 킬 스위치 → M32에서 직접 페이더 + EQ 컷 → MixPilot 재시작
 - **자동 액션 잘못된 채널에 적용**: 킬 스위치 → 콘솔에서 수동 복구 → 채널 매핑 확인 후 재시작

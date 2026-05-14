@@ -10,6 +10,7 @@
     fetchRecentActions,
     fetchRules,
     forceDryRun,
+    reloadThresholds,
     setOperatingMode,
     setRuleEnabled,
     subscribeMeters,
@@ -63,6 +64,9 @@
   let operatingMode = $state<OperatingModeState | null>(null);
   let operatingModeError = $state<string | null>(null);
   let operatingModeBusy = $state(false);
+  let reloadBusy = $state(false);
+  let reloadStatus = $state<string | null>(null);
+  let reloadError = $state<string | null>(null);
 
   const MAX_VISIBLE_RECS = 50;
   const RECENT_ACTIONS_POLL_MS = 5_000;
@@ -217,6 +221,23 @@
       editError = String(e);
     } finally {
       editSaving = false;
+    }
+  }
+
+  async function handleReloadThresholds(): Promise<void> {
+    if (reloadBusy) return;
+    reloadBusy = true;
+    reloadError = null;
+    try {
+      const data = await reloadThresholds();
+      const ts = new Date().toLocaleTimeString("ko-KR", { hour12: false });
+      const ignoredCount = data.ignored.length;
+      reloadStatus = `${ts} — 임계 reload 완료 (재시작 필요 ${ignoredCount}건)`;
+    } catch (e) {
+      reloadError = String(e);
+      reloadStatus = null;
+    } finally {
+      reloadBusy = false;
     }
   }
 
@@ -502,6 +523,22 @@
         <dt>Stereo Phase</dt><dd>{health.phase_analysis_enabled ? "활성" : "비활성"}</dd>
         <dt>미터 스트림</dt><dd>{health.meter_stream_enabled ? "활성" : "비활성"}</dd>
       </dl>
+      <div class="reload-row">
+        <button
+          class="reload-thresholds-btn"
+          disabled={reloadBusy}
+          onclick={handleReloadThresholds}
+          title=".env / 환경 변수의 임계·타깃을 라이브 갱신. audio·buffer 변경은 재시작 필요."
+        >
+          {reloadBusy ? "임계 reload 중…" : "🔄 임계 reload (재시작 없이)"}
+        </button>
+        {#if reloadStatus}
+          <span class="reload-status">{reloadStatus}</span>
+        {/if}
+        {#if reloadError}
+          <span class="error-inline">{reloadError}</span>
+        {/if}
+      </div>
     {:else}
       <p>로딩 중…</p>
     {/if}
@@ -1182,6 +1219,36 @@
   .reload-btn:hover {
     background: #2a2f39;
     color: #c8cdd6;
+  }
+  .reload-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    padding-top: 0.9rem;
+    border-top: 1px solid #262a33;
+    flex-wrap: wrap;
+  }
+  .reload-thresholds-btn {
+    background: #1f2a3a;
+    color: #aac4ff;
+    border: 1px solid #2a4a73;
+    padding: 0.4rem 0.85rem;
+    border-radius: 0.25rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .reload-thresholds-btn:hover:not(:disabled) {
+    background: #243349;
+  }
+  .reload-thresholds-btn:disabled {
+    opacity: 0.5;
+    cursor: wait;
+  }
+  .reload-status {
+    color: #6fcf97;
+    font-size: 0.8rem;
   }
   .ch-actions {
     width: 7rem;

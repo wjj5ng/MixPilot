@@ -7,6 +7,17 @@ MixPilot의 모든 주목할 만한 변경 사항을 기록합니다.
 
 ## [Unreleased]
 
+### Added (Unreleased, 가이드 #6)
+
+- **graceful 임계 reload** — `POST /control/reload` + 상태 카드 "🔄 임계 reload"
+  버튼. `.env` 또는 환경 변수 갱신 후 호출하면 새 `Settings()`를 평가해
+  라이브 갱신 가능한 임계·타깃만 in-place mutate — 다음 frame부터 즉시 반영,
+  서버 재시작 불필요. 응답은 갱신된 `applied_thresholds` dict + 재시작이
+  필요한 `ignored` 영역(audio·buffer·detector·OSC·sink·audit_log·meter
+  interval). `runtime.LiveThresholds` 도입으로 `_processing_loop`은 14개
+  scalar kwarg 대신 단일 가변 객체를 받고, mutate가 동일 참조에서 즉시 반영.
+  단위 8건 + 통합 3건. 운영 가이드 빈틈 #6.
+
 ### Added (Unreleased, 가이드 #3)
 
 - **채널 시계열 카드 다채널 비교** — 단일 select 대신 채널 chip 토글로

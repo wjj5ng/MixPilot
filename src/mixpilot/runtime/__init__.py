@@ -11,6 +11,7 @@ from .action_history import ActionHistory, HistoryEntry
 from .auto_guard import AutoGuard, GuardDecision
 from .buffer import RollingBuffer
 from .feedback_detector import FeedbackDetector
+from .live_thresholds import LiveThresholds
 from .persistence_filter import PersistenceFilter
 from .rule_toggles import RULE_NAMES, RuleToggles
 
@@ -21,6 +22,7 @@ __all__ = [
     "FeedbackDetector",
     "GuardDecision",
     "HistoryEntry",
+    "LiveThresholds",
     "PersistenceFilter",
     "RollingBuffer",
     "RuleToggles",
