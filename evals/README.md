@@ -156,6 +156,8 @@ cases:
 | `dynamic-range-baseline.yaml` | `dynamic_range_db` | 5/5 |
 | `lra-baseline.yaml` | `lra` | 5/5 (raises 케이스 2개 포함) |
 | `phase-baseline.yaml` | `phase_correlation_pair` | 4/4 (in/anti-phase·quadrature·silence) |
+| `lufs-conformance.yaml` | `lufs_integrated` | 11/11 (레벨 선형성 4 + K-weighting freq response 6 + silence floor) |
+| `lra-conformance.yaml` | `lra` | 6/6 (two-level 10/20/30 dB + steady + silence + too short) |
 
 ## DSP 정확도 임계 기준
 
@@ -165,8 +167,11 @@ cases:
 - True Peak: 사인파 0~10% 초과(resample 보간 transient 영향).
 - Feedback frequency: ± 50 Hz (1024-pt FFT의 bin resolution ≈ 47 Hz).
 - Dynamic Range: abs_tol 0.01 dB (사인파/임펄스 이론값과 거의 정확).
-- LRA: 속성·범위 검증 (steady < 0.5 LU). 정확값 검증은 EBU Tech 3341
-  conformance test signals 도입 시점에 추가 (ADR-0009).
+- LRA: 속성·범위 검증 (steady < 0.5 LU). 정확값 검증은
+  `lra-conformance.yaml`에 추가됨 — two-level 10/20/30 dB 차이 신호.
+- LUFS conformance: `lufs-conformance.yaml`이 ITU-R BS.1770-4 K-weighting
+  주파수 응답을 6 frequencies로 검증(125 Hz~8 kHz). EBU R128 실 wav 컨포먼스
+  셋(영화 클립 등)은 외부 다운로드 필요라 별도.
 
 임계를 *완화*하려면 ADR 작성 필요.
 

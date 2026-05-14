@@ -1,0 +1,94 @@
+# EBU Tech 3342 LRA conformance 스타일 검증.
+#
+# 자동 생성 가능한 two-level / steady / silence 시그널로 LRA 알고리즘 정확성
+# 검증. 실제 EBU R128 test signals(영화 클립)는 외부 wav 필요라 별도.
+#
+# 검증 영역:
+# 1. **두 레벨 정확 검출** — N dB 차이의 길이 같은 두 톤 → LRA ≈ N LU.
+# 2. **Relative gate 동작** — 30 dB 이상 차이는 quiet 부분이 게이트되어
+#    오히려 LRA가 작아짐 (ADR-0009 / EBU Tech 3342 §3.3 power-mean 게이트).
+# 3. **Steady → 0** / **Silence → NO_LRA(0)**.
+#
+# 정확도: abs_tol 0.1 LU — LRA의 percentile linear 보간 정밀.
+
+id: lra-conformance
+description: EBU Tech 3342 LRA conformance — 다중 레벨·게이트·boundary.
+function_under_test: mixpilot.dsp.lra.lra
+
+cases:
+  - id: lra-two-level-10db
+    input:
+      kind: two_level_sine
+      sample_rate: 48000
+      frequency_hz: 1000
+      amplitude_a: 0.5
+      duration_a_seconds: 10.0
+      amplitude_b: 0.158  # √10 down → 10 dB 감소
+      duration_b_seconds: 10.0
+    expected:
+      # 실측: 10.006 LU. EBU 표준 기대치 10 LU ± 1.
+      value: 10.006
+      tolerance_abs: 0.1
+
+  - id: lra-two-level-20db
+    input:
+      kind: two_level_sine
+      sample_rate: 48000
+      frequency_hz: 1000
+      amplitude_a: 0.5
+      duration_a_seconds: 10.0
+      amplitude_b: 0.05   # 10:1 → 20 dB 감소
+      duration_b_seconds: 10.0
+    expected:
+      # 실측: 20.000 LU. 양쪽 모두 절대 게이트 통과(>-70), 상대 게이트도 통과.
+      value: 20.000
+      tolerance_abs: 0.1
+
+  - id: lra-two-level-30db-quiet-gated
+    input:
+      kind: two_level_sine
+      sample_rate: 48000
+      frequency_hz: 1000
+      amplitude_a: 0.5
+      duration_a_seconds: 10.0
+      amplitude_b: 0.0158  # 30 dB 감소
+      duration_b_seconds: 10.0
+    expected:
+      # 30 dB 차이 → power-mean ~ -10 LUFS, relative gate (-30 LUFS)가
+      # quiet 부분(-40 LUFS) 제거 → 좁은 분포 → LRA 작아짐.
+      # 실측: 2.059 LU. EBU R128 gating의 *의도된* 동작.
+      value: 2.059
+      tolerance_abs: 0.2
+
+  - id: lra-steady-zero
+    input:
+      kind: sine
+      sample_rate: 48000
+      frequency_hz: 1000
+      amplitude: 0.3
+      duration_seconds: 10.0
+    expected:
+      # Steady tone → 분포가 한 점 → LRA = 0.
+      value: 0.0
+      tolerance_abs: 0.01
+
+  - id: lra-silence-no-lra
+    input:
+      kind: silence
+      sample_rate: 48000
+      duration_seconds: 10.0
+    expected:
+      # 절대 게이트로 모두 제거 → NO_LRA(0).
+      value: 0.0
+      tolerance_abs: 0.0
+
+  - id: lra-too-short-raises
+    input:
+      kind: sine
+      sample_rate: 48000
+      frequency_hz: 1000
+      amplitude: 0.1
+      duration_seconds: 2.0
+    expected:
+      raises: ValueError
+      match: "too short"
